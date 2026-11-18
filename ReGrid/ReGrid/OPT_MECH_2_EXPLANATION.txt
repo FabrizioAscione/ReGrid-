@@ -1,0 +1,767 @@
+SPIEGAZIONE DELL'OTTIMIZZATORE MECCANICO
+=========================================
+
+File principali coinvolti:
+
+- unitled.py
+  Contiene i parametri utente e chiama l'ottimizzatore quando optimization=True.
+
+- OS_opt_sections_ec3.py
+  Contiene l'ottimizzatore meccanico completo:
+      optimize_sections_ec3(...)
+
+- genetic_fast_mech_solver.py
+  Contiene una versione piu leggera usata opzionalmente dentro il ciclo genetico.
+
+- reuse_genetic_evaluator.py
+  Chiama l'ottimizzatore meccanico per ogni candidato geometrico del GA/reuse workflow.
+
+
+1. SCOPO GENERALE
+-----------------
+
+L'ottimizzatore meccanico serve ad assegnare sezioni di acciaio agli elementi della
+struttura in modo che il modello rispetti alcuni vincoli strutturali:
+
+1. analisi elastica OpenSees convergente;
+2. verifica EC3 con DCR massimo minore o uguale al limite scelto;
+3. limite di spostamento verticale, se attivo;
+4. moltiplicatore di instabilita lineare, se attivo;
+5. fattore Merchant-Rankine, se attivo.
+
+Nel tuo setup attuale, in unitled.py, i parametri principali sono:
+
+    optimization = False
+    mecc_opt = 2
+    opt_dcr_limit = 0.8
+    check_disp = True
+    opt_dlim = 0.15
+    opt_check_buckling = True
+    opt_buckling_lambda_min = 1
+    opt_check_merchant_rankine = True
+    opt_merchant_rankine_min = 1.0
+    opt_max_iter = 50
+    section_num = 50
+
+Quindi, se abiliti optimization=True, il codice usa di default mecc_opt=2: cioe'
+non cerca una sola sezione globale per tutta la struttura, ma puo assegnare sezioni
+diverse a gruppi diversi di aste.
+
+
+2. COME VIENE CHIAMATO DA unitled.py
+------------------------------------
+
+Nel blocco "SECTION ASSIGNMENT", se non si sta usando una soluzione genetica e se
+optimization=True, unitled.py esegue:
+
+    optimize_sections_ec3(...)
+
+passando:
+
+- G e M, cioe' geometria e mesh strutturale;
+- il materiale elastico material_el;
+- il catalogo delle sezioni;
+- vincoli, carichi e funzioni OpenSees;
+- i limiti DCR, spostamento, buckling e Merchant-Rankine;
+- la riga iniziale di catalogo section_num;
+- il numero massimo di iterazioni opt_max_iter.
+
+Il risultato viene salvato in:
+
+    opt_result
+
+e poi vengono estratti:
+
+    props_global = opt_result.get("props_global", None)
+    section_by_member = opt_result["section_by_member"]
+    section_name_by_member = opt_result["section_name_by_member"]
+
+Questi dizionari diventano la base per le analisi successive, inclusa la parte
+non lineare se attiva.
+
+
+3. CATALOGO DELLE SEZIONI
+-------------------------
+
+Le sezioni candidate vengono caricate da catalogo con:
+
+    load_candidate_sections_ec3(...)
+
+oppure possono arrivare gia' pronte tramite candidate_sections.
+
+In ogni caso vengono ordinate dalla piu leggera alla piu pesante. Il criterio usato
+e':
+
+1. peso lineare w_kN_per_m;
+2. area A;
+3. nome della sezione.
+
+Questo significa:
+
+    indice basso  = sezione leggera
+    indice alto   = sezione piu pesante / piu rigida
+
+Durante la ricerca di fattibilita' gli indici crescono: l'algoritmo parte da una
+sezione iniziale e, se il modello non verifica, sposta alcuni gruppi verso sezioni
+piu robuste.
+
+La sezione iniziale viene scelta cosi':
+
+1. se start_section_row e' definito, usa quella riga di catalogo, interpretata come
+   1-based;
+2. altrimenti, se start_from_first_section=True, parte dalla prima sezione del
+   catalogo ordinato;
+3. altrimenti prova a partire da initial_section_name;
+4. se il nome non viene trovato, ricade sulla prima sezione.
+
+Nel tuo unitled.py, per l'ottimizzazione meccanica classica:
+
+    start_from_first_section=False
+    start_section_row=section_num
+
+quindi la partenza e' controllata da section_num.
+
+
+4. CHE COSA E' UNO "STATO" STRUTTURALE
+--------------------------------------
+
+Il cuore dell'ottimizzatore e' la funzione:
+
+    _build_elastic_state(...)
+
+Ogni volta che l'algoritmo vuole testare una certa assegnazione di sezioni, ricostruisce
+e analizza un modello elastico OpenSees. Questo e' importante: non viene fatta una
+verifica statica su forze vecchie senza aggiornare la rigidezza. Le forze interne
+vengono ricalcolate con la distribuzione di rigidezza corrente.
+
+Per ogni stato il codice fa questi passi:
+
+1. inizializza il modello OpenSees;
+2. definisce i nodi;
+3. applica i vincoli;
+4. crea gli elementi con section_by_member;
+5. applica il peso proprio usando le sezioni correnti;
+6. se serve il buckling, salva la matrice elastica K0;
+7. applica i carichi esterni;
+8. esegue l'analisi statica elastica;
+9. se l'analisi converge, estrae spostamenti e forze interne;
+10. esegue le verifiche EC3 aggregate per membro;
+11. calcola il rapporto di spostamento rispetto al limite dlim;
+12. opzionalmente calcola instabilita lineare e Merchant-Rankine.
+
+Lo stato restituito contiene campi come:
+
+    analysis_ok
+    res
+    ele_data
+    ec3_results
+    ec3_dcr_max
+    disp_ratio
+    lb_lambda_1
+    lb_lambda_ref
+    lb_lambdas
+    lb_ok
+    merchant_rankine
+    merchant_rankine_ok
+    section_by_member
+
+Il valore disp_ratio e':
+
+    disp_ratio = spostamento_verticale_massimo_assoluto / dlim
+
+Quindi:
+
+    disp_ratio <= 1.0  significa spostamento accettabile
+    disp_ratio > 1.0   significa spostamento oltre il limite
+
+
+5. CRITERIO DI FATTIBILITA'
+---------------------------
+
+La funzione che decide se uno stato e' accettabile e':
+
+    _is_feasible_state(...)
+
+Uno stato e' fattibile se:
+
+1. analysis_ok e' True;
+2. ec3_dcr_max <= dcr_limit;
+3. se check_disp=True, disp_ratio <= 1.0;
+4. se check_buckling=True, il lambda del modo richiesto e' >= buckling_lambda_min;
+5. se check_merchant_rankine=True, il fattore Merchant-Rankine e' >= merchant_rankine_min.
+
+La verifica base viene fatta senza buckling per non pagare il costo del problema agli
+autovalori a ogni tentativo. Quando un candidato sembra gia' fattibile per EC3 e
+spostamenti, allora viene rilanciato uno stato avanzato con compute_buckling=True.
+
+
+6. MODALITA' mecc_opt=1
+-----------------------
+
+Con mecc_opt=1 l'ottimizzatore cerca una sola sezione globale per tutte le aste.
+
+Il flusso e':
+
+1. parte dall'indice iniziale del catalogo;
+2. assegna la stessa sezione a tutti i membri;
+3. costruisce lo stato elastico;
+4. controlla DCR e spostamenti;
+5. se questi sono accettabili e sono attivi buckling o Merchant-Rankine, rilancia
+   anche la verifica avanzata;
+6. si ferma alla prima sezione che soddisfa tutti i criteri.
+
+Se nessuna sezione risulta pienamente fattibile, restituisce comunque il miglior stato
+trovato secondo una penalita':
+
+    penalty = max(0, DCR - limite_DCR) * 100
+            + max(0, disp_ratio - 1) * 10
+
+Questa modalita' e' semplice e robusta, ma puo essere molto conservativa: se una sola
+zona della struttura e' critica, tutta la struttura riceve comunque la stessa sezione.
+
+
+7. MODALITA' mecc_opt=2
+-----------------------
+
+Con mecc_opt=2 l'ottimizzatore lavora per gruppi di aste. Ogni gruppo riceve un unico
+indice di sezione, ma gruppi diversi possono avere sezioni diverse.
+
+Questa e' la modalita' piu interessante del tuo codice.
+
+Il ciclo generale e':
+
+1. costruisci gruppi di membri simili;
+2. assegna a tutti i gruppi la sezione iniziale;
+3. analizza il modello;
+4. se alcuni gruppi sono troppo eterogenei, dividili in sottogruppi per domanda;
+5. controlla fattibilita' base;
+6. se la base e' fattibile, controlla buckling e Merchant-Rankine;
+7. se non e' fattibile, scegli una strategia di aumento sezioni:
+   - instabilita;
+   - analisi non convergente;
+   - DCR troppo alto;
+   - spostamento troppo alto;
+   - resize locale EC3;
+8. aggiorna gli indici di sezione;
+9. ripeti fino a max_iter o fino alla prima soluzione fattibile.
+
+Nota importante: nel codice attuale non c'e' una vera fase finale di alleggerimento
+dopo la prima soluzione fattibile. Appena viene trovata una soluzione fattibile,
+optimize_sections_ec3 la scrive nel report, finalizza i timing e la restituisce.
+
+
+8. GRUPPI DI ASTE
+-----------------
+
+La funzione:
+
+    _build_similarity_groups(G, M, members)
+
+costruisce i gruppi di progetto.
+
+La logica e':
+
+1. se M["member_groups"] esiste, usa quei gruppi predefiniti;
+2. se M["lines"]["x"] e M["lines"]["y"] esistono, crea gruppi lungo le linee della
+   griglia;
+3. i livelli vengono normalizzati usando il valore assoluto della coordinata, quindi
+   linee simmetriche come +x e -x possono finire nello stesso tipo di gruppo;
+4. ogni membro non assegnato diventa un gruppo singolo.
+
+Il risultato e':
+
+    group_to_members = {
+        "nome_gruppo": [(nodo_i, nodo_j), ...],
+        ...
+    }
+
+Ogni gruppo ha poi un indice:
+
+    group_to_idx = {
+        "nome_gruppo": indice_sezione,
+        ...
+    }
+
+La mappa finale per OpenSees viene creata da:
+
+    _group_section_mapping(...)
+
+che traduce gli indici di gruppo in:
+
+    section_by_member = {
+        (nodo_i, nodo_j): sezione,
+        ...
+    }
+
+
+9. SPLIT DEI GRUPPI PER DOMANDA
+-------------------------------
+
+Alla prima analisi valida, mecc_opt=2 puo rifinire i gruppi con:
+
+    _refine_groups_by_demand(...)
+
+Serve a evitare che un gruppo molto grande e meccanicamente eterogeneo venga trattato
+come un blocco unico.
+
+Per ogni membro viene calcolato uno score di domanda:
+
+    score = DCR_locale
+          + 0.15 * L
+          + 0.35 * N
+          + 0.30 * My
+          + 0.30 * Mz
+          + 0.05 * T
+
+dove L e' la lunghezza del membro, N e' l'azione assiale, My e Mz sono i momenti e T
+e' la torsione.
+
+Se un gruppo ha almeno min_group_size membri e il coefficiente di variazione degli score
+supera min_cv, il gruppo viene diviso in 2 o 3 sottogruppi ordinati per domanda.
+
+Questa scelta rende il layout delle sezioni piu regolare di un sizing completamente
+per membro, ma evita anche che gruppi troppo grandi impongano a molti elementi una
+sezione dettata da pochi membri critici.
+
+
+10. CASO: ANALISI ELASTICA NON CONVERGENTE
+------------------------------------------
+
+Se lo stato corrente non converge:
+
+    analysis_ok = False
+
+l'ottimizzatore interpreta il modello come troppo debole o troppo instabile per quella
+assegnazione di sezioni. In questo caso applica un aumento globale degli indici di
+sezione.
+
+Il salto viene stimato con:
+
+    _disp_uplift_jump(disp_ratio)
+
+Se disp_ratio non e' finito o e' molto alto, il salto cresce. Tutti i gruppi che non
+sono gia' all'ultima sezione vengono spostati verso sezioni piu robuste.
+
+
+11. CASO: DCR TROPPO ALTO
+-------------------------
+
+Se:
+
+    ec3_dcr_max > dcr_limit
+
+la resistenza EC3 governa la modifica.
+
+Il codice calcola prima il DCR locale di ogni membro:
+
+    _member_local_dcrs(...)
+
+poi per ogni gruppo prende il peggiore:
+
+    group_local_dcrs[group] = max(DCR dei membri del gruppo)
+
+A questo punto entra:
+
+    _resistance_upgrade_plan(...)
+
+Questa funzione:
+
+1. considera solo i gruppi con DCR locale maggiore del limite;
+2. li ordina dal piu critico al meno critico;
+3. calcola un salto di indice con _dcr_uplift_jump(...);
+4. decide quanti gruppi aggiornare in base alla gravita' del DCR globale;
+5. aumenta solo i gruppi scelti.
+
+Il salto _dcr_uplift_jump cresce se:
+
+- DCR / DCR_limite e' molto alto;
+- restano poche iterazioni rispetto a max_iter.
+
+Quindi all'inizio l'algoritmo puo essere piu selettivo, mentre verso la fine diventa
+piu aggressivo per non rimanere bloccato.
+
+Nell'ultimo tratto delle iterazioni, quando restano circa il 20% delle iterazioni,
+puo attivarsi anche:
+
+    _terminal_force_group_feasibility_plan(...)
+
+Questa funzione prova per ogni gruppo a trovare direttamente la prima sezione candidata
+che rende accettabile il peggior membro del gruppo secondo EC3.
+
+
+12. RESIZE LOCALE EC3 PER GRUPPI
+--------------------------------
+
+Se i piani precedenti non hanno gia' aggiornato i gruppi, il codice prova il resize
+locale:
+
+    _pick_first_feasible_section_for_group(...)
+
+Per ogni gruppo:
+
+1. prende le envelope delle azioni interne dei membri;
+2. parte dall'indice di sezione corrente;
+3. scorre le sezioni candidate verso l'alto;
+4. per ogni sezione calcola la verifica EC3 su tutti i membri del gruppo;
+5. misura il peggior DCR del gruppo;
+6. sceglie la prima sezione con:
+
+       group_dcr_max <= dcr_limit
+
+Questa e' una logica "worst member controls": il gruppo riceve una sezione comune, ma
+deve essere sufficiente per il membro piu sollecitato del gruppo.
+
+
+13. CASO: SPOSTAMENTO TROPPO ALTO
+---------------------------------
+
+Se:
+
+    check_disp = True
+    disp_ratio > 1.0
+
+il limite di spostamento governa.
+
+Il codice usa:
+
+    _displacement_upgrade_plan(...)
+
+L'idea e' aumentare non tutti i gruppi, ma quelli che sembrano piu efficaci per ridurre
+la deformabilita' globale.
+
+Per stimare l'efficacia, usa una proxy di compliance:
+
+    C = L * ( N^2  / (E*A)
+            + My^2 / (E*Iy)
+            + Mz^2 / (E*Iz)
+            + T^2  / (G*J) )
+
+dove:
+
+- L e' la lunghezza;
+- E e G vengono dal materiale;
+- A, Iy, Iz, J vengono dalla sezione;
+- N, My, Mz, T vengono dalle envelope delle azioni.
+
+Per ogni gruppo viene confrontata la sezione corrente con una sezione piu pesante:
+
+    benefit = C_corrente - C_successiva
+
+Poi il beneficio viene diviso per l'aumento di peso lineare:
+
+    score = benefit / delta_peso
+
+e viene moltiplicato per un piccolo bias legato al DCR locale, cosi' un gruppo gia'
+vicino alla crisi di resistenza viene favorito.
+
+I gruppi vengono ordinati per score e viene aggiornato solo un sottoinsieme. La quota
+dipende da quanto disp_ratio supera 1.0:
+
+- violazione piccola: pochi gruppi;
+- violazione grande: piu gruppi e salto di sezione maggiore.
+
+Se nessun gruppo ottiene uno score utile, il codice usa un fallback globale:
+
+    global_disp_uplift_fallback
+
+cioe' aumenta tutti i gruppi che possono ancora salire nel catalogo.
+
+
+14. CASO: BUCKLING E MERCHANT-RANKINE
+-------------------------------------
+
+Per risparmiare tempo, il buckling non viene calcolato in ogni stato base. Il flusso e':
+
+1. prima trova un candidato fattibile per analisi, EC3 e spostamento;
+2. se check_buckling o check_merchant_rankine sono attivi, rilancia lo stato con
+   compute_buckling=True;
+3. calcola i moltiplicatori di buckling lineare;
+4. controlla il modo richiesto;
+5. se richiesto, calcola anche Merchant-Rankine.
+
+Il Merchant-Rankine viene calcolato combinando DCR massimo e lambda di buckling:
+
+    merchant_rankine_factor(dcr_max, linear_buckling_factor)
+
+Se il controllo avanzato fallisce, il codice prova dei retry di buckling fino a:
+
+    buckling_max_retries
+
+Nel tuo unitled.py:
+
+    opt_buckling_retries = 50
+
+Durante questi retry l'ottimizzatore usa due strategie.
+
+Strategia targeted:
+
+    _buckling_group_upgrade_plan(...)
+
+Assegna uno score ai gruppi usando una vulnerabilita' approssimata:
+
+    vulnerabilita = somma( N_compressione * L^2 )
+
+poi valuta quanto la sezione successiva aumenta la rigidezza:
+
+    stiff_gain = 0.65 * incremento_relativo_Imin
+               + 0.25 * incremento_relativo_Iavg
+               + 0.10 * incremento_relativo_A
+
+Lo score finale e':
+
+    score = vulnerabilita * stiff_gain
+
+I gruppi con score maggiore vengono aumentati.
+
+Strategia global:
+
+    _buckling_global_upgrade_plan(...)
+
+Se la strategia targeted non produce cambiamenti o se il lambda ristagna, il codice
+passa a una strategia piu globale basata sulla sola vulnerabilita' compressiva.
+
+Il salto di sezione e' controllato da:
+
+    _buckling_uplift_jump(lambda_corrente, lambda_target)
+
+Se il rapporto target/lambda_corrente e' alto, il salto e' piu aggressivo.
+
+
+15. COME VIENE SCELTO IL "MIGLIOR FALLBACK"
+-------------------------------------------
+
+Durante la ricerca il codice conserva anche il miglior stato visto finora, anche se non
+e' pienamente fattibile.
+
+La penalita' usata e':
+
+    penalty = max(0, DCR - dcr_limit) * 100
+            + max(0, disp_ratio - 1) * 10
+
+Il DCR pesa piu dello spostamento nella penalita'. Se l'ottimizzatore non riesce a
+trovare una soluzione completamente fattibile entro max_iter, restituisce il miglior
+stato disponibile oppure l'ultimo fallback costruibile.
+
+
+16. OUTPUT PRINCIPALI
+---------------------
+
+optimize_sections_ec3 restituisce un dizionario. I campi piu importanti sono:
+
+    analysis_ok
+        True se l'ultima analisi considerata converge.
+
+    props_global
+        Dizionario della sezione globale solo se tutti i gruppi hanno la stessa sezione.
+        Se ci sono sezioni diverse, vale None.
+
+    section_by_member
+        Dizionario fondamentale:
+            (nodo_i, nodo_j) -> sezione assegnata
+
+    section_name_by_member
+        Come section_by_member, ma con solo il nome della sezione.
+
+    ec3_results
+        Risultati EC3 aggregati per membro.
+
+    ec3_dcr_max
+        DCR massimo globale.
+
+    disp_ratio
+        Rapporto tra spostamento verticale massimo e limite dlim.
+
+    lb_lambda_1, lb_lambda_ref, lb_lambdas
+        Risultati di instabilita lineare, se calcolati.
+
+    merchant_rankine
+        Fattore Merchant-Rankine, se calcolato.
+
+    group_to_members
+        Composizione dei gruppi di progetto.
+
+    group_to_idx
+        Indice di sezione scelto per ogni gruppo.
+
+    history
+        Lista degli step eseguiti, con tag come:
+            group_split_by_demand
+            analysis_failed_uplift
+            global_dcr_uplift
+            targeted_disp_uplift
+            global_disp_uplift_fallback
+            local_resize
+            buckling_check
+            buckling_retry
+            feasible_found
+
+    optimization_timings
+        Tempi e numero di chiamate:
+            state_calls_total
+            state_time_total_s
+            state_calls_base
+            state_time_base_s
+            state_calls_buckling
+            state_time_buckling_s
+            time_total_s
+
+
+17. REPORT DI GRUPPO
+--------------------
+
+Se group_report_path e' attivo, la funzione scrive:
+
+    outputs/opt_mech_2_group_report.txt
+
+Il report contiene:
+
+- fattibilita' finale;
+- DCR massimo;
+- rapporto di spostamento;
+- numero di gruppi;
+- numero di step in history;
+- per ogni gruppo:
+  - indice di catalogo;
+  - nome sezione;
+  - numero di membri;
+  - lunghezza totale;
+  - peggior DCR;
+  - membro peggiore;
+  - lista dei membri.
+
+Questo file e' molto utile per capire perche' una zona ha ricevuto una sezione piu
+pesante di un'altra.
+
+
+18. USO DENTRO L'OTTIMIZZAZIONE GENETICA
+----------------------------------------
+
+Quando reuse_genetic_opt=True, l'ottimizzatore meccanico viene usato anche dentro il
+ciclo genetico.
+
+Il flusso per ogni candidato GA e':
+
+1. il GA propone un vettore decisionale;
+2. apply_quarter_mirror_moves(...) modifica la geometria G;
+3. viene ricostruita o riusata la topologia M;
+4. _run_mechanical_optimization(...) assegna le sezioni;
+5. se attivo, match_reused_members(...) prova a sostituire membri con stock di riuso;
+6. il progetto finale viene ricontrollato;
+7. vengono calcolati obiettivi e vincoli per il GA.
+
+In unitled.py questo e' configurato con:
+
+    genetic_mech_solver = "ec3"
+    genetic_opt_mech = 2
+
+Con "ec3" il GA usa lo stesso optimize_sections_ec3 completo. Con "fast" userebbe
+solve_genetic_fast_mech(...), una versione piu rapida e semplificata: utile per molte
+valutazioni, ma meno ricca della versione EC3 completa.
+
+Il GA puo anche rendere variabili alcuni parametri dell'ottimizzatore, per esempio:
+
+- limite DCR interno dell'ottimizzatore;
+- limite di spostamento interno;
+- lambda minimo di buckling;
+- limite Merchant-Rankine;
+- lunghezza massima di taglio per il riuso.
+
+Questi controlli sono definiti tramite ReuseGeneticDecisionControls.
+
+
+19. DIFFERENZA TRA VINCOLI DELL'OTTIMIZZATORE E VINCOLI DEL GA
+--------------------------------------------------------------
+
+Nel workflow genetico ci sono due livelli:
+
+1. vincoli usati dall'ottimizzatore meccanico interno;
+2. vincoli finali usati per giudicare il candidato GA.
+
+Esempio:
+
+    genetic_opt_dcr_limit
+        limite usato mentre l'ottimizzatore sceglie le sezioni;
+
+    genetic_dcr_limit
+        limite usato per dire se il candidato finale del GA e' fattibile.
+
+Lo stesso vale per:
+
+    genetic_opt_dlim              vs genetic_disp_limit
+    genetic_opt_buckling_lambda_min vs genetic_buckling_lambda_min
+    genetic_opt_merchant_rankine_min vs genetic_merchant_rankine_min
+
+Questa separazione e' utile perche' puoi fare sizing meccanico con un certo margine e
+poi valutare il candidato con vincoli finali eventualmente diversi.
+
+
+20. COSA C'E' DI EURISTICO
+--------------------------
+
+L'ottimizzatore non e' un algoritmo matematico di ottimo globale. E' una procedura
+ingegneristica euristica basata su analisi ripetute.
+
+Le parti euristiche principali sono:
+
+- il ranking dei gruppi per spostamento usa una proxy di compliance, non una vera
+  analisi di sensitivita' con carico virtuale;
+- il ranking per buckling usa compressione * L^2 e incrementi di rigidezza, non la
+  derivata esatta dell'autovalore;
+- i gruppi vengono dedotti da M["member_groups"] e M["lines"], poi eventualmente
+  divisi per domanda;
+- durante la fase di fattibilita' gli indici crescono, quindi la ricerca e' monotona
+  verso sezioni piu robuste;
+- al momento non esiste una fase finale che provi a ridurre sezioni dopo avere trovato
+  la prima soluzione fattibile.
+
+Il vantaggio e' che il metodo e' robusto, leggibile e integrabile nel GA. Lo svantaggio
+e' che puo fermarsi a una soluzione fattibile ma non necessariamente minima in peso.
+
+
+21. INTERPRETAZIONE PRATICA
+---------------------------
+
+In parole semplici, mecc_opt=2 lavora cosi':
+
+1. parte da una sezione iniziale per tutti i gruppi;
+2. analizza davvero la struttura con quella distribuzione di rigidezza;
+3. se il modello non converge, aumenta globalmente;
+4. se il DCR e' troppo alto, aumenta i gruppi con DCR peggiore;
+5. se lo spostamento e' troppo alto, aumenta i gruppi che sembrano dare piu rigidezza
+   per un costo di peso minore;
+6. se il buckling o Merchant-Rankine falliscono, aumenta i gruppi piu vulnerabili a
+   compressione e instabilita;
+7. se serve, prova un resize locale EC3 gruppo per gruppo;
+8. appena trova una soluzione che rispetta tutti i vincoli attivi, la restituisce.
+
+Il risultato e' un assegnamento di sezioni piu realistico di una singola sezione globale:
+le zone piu sollecitate o piu importanti per rigidezza e stabilita' ricevono sezioni
+piu grandi, mentre le zone meno critiche possono rimanere piu leggere.
+
+
+22. POSSIBILI MIGLIORAMENTI FUTURI
+----------------------------------
+
+Se vuoi spingerlo oltre, le estensioni piu naturali sarebbero:
+
+1. aggiungere una vera fase di alleggerimento finale:
+   dopo la prima soluzione fattibile, provare a ridurre gruppi uno alla volta e accettare
+   solo le riduzioni che mantengono tutti i vincoli;
+
+2. usare sensitivita' vere per gli spostamenti:
+   carichi virtuali e contributi energetici piu coerenti con il grado di liberta'
+   controllato;
+
+3. usare sensitivita' modali per il buckling:
+   invece della proxy compressione * L^2;
+
+4. separare esplicitamente combinazioni SLS e ULS:
+   spostamenti su carichi di esercizio, EC3 su carichi ultimi;
+
+5. esporre all'utente la definizione dei gruppi:
+   per famiglia, per simmetria, per layer, per set custom;
+
+6. salvare report piu diagnostici:
+   top gruppi per DCR, top gruppi per compliance, top gruppi per buckling, motivo del
+   cambio sezione e salto scelto.
+
