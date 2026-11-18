@@ -16,3 +16,8 @@ The analysis workflow starts with user-defined geometry and mesh parameters. The
 The code is organized into modules for geometry, meshing, analysis, optimization, visualization and data export. Configuration options and batch tools support running different cases without manually rebuilding each model.
 
 The project is intended as a configurable research environment: available analyses and optional workflows depend on the selected settings and input data.
+
+If you use this code in your research, please cite the following papers
+1. Ascione, F., Esposito, F., Faiella, D., Mele, E. (2026). Reuse Based Design of Steel Gridshells Through Multi-Objective Optimization. In: Zanon, R., Nastri, E., Simoncelli, M., Paolacci, F. (eds) Proceedings of the XXX Congress CTA 2026. CTA 2026. Lecture Notes in Civil Engineering, vol 942. Springer, Cham. https://doi.org/10.1007/978-3-032-39505-4_10
+2. Ascione, F., Esposito, F., Faiella, F., Mele E., Steel reuse for sustainable design of large-span structures: The case of gridshells, Journal of Constructional Steel Research, Volume 234,
+2025, 109743, ISSN 0143-974X, https://doi.org/10.1016/j.jcsr.2025.109743.
