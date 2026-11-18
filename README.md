@@ -1,5 +1,6 @@
 # ReGrid-
 ReGrid is a Python toolkit for the parametric modelling, structural analysis and reuse-based stock-constrained structural optimisation of gridshell structures. The project uses OpenSeesPy to perform elastic static analysis, linear buckling analysis, nonlinear load-path analysis and mechanical optimisation. 
+<img width="1486" height="687" alt="image" src="https://github.com/user-attachments/assets/29906089-1c6a-4739-afa7-1e37dbc82a29" />
 
 Features
 Parametric geometry: Generate barrel vaults, parabolic domes, hypar surfaces and Kiewitt-8 domes by specifying dimensions, rise and mesh subdivisions.
