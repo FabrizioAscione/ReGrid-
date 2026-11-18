@@ -26,3 +26,4 @@ python-dateutil==2.9.0.post0
 scipy==1.15.3
 six==1.17.0
 wrapt==2.1.2
+PyYAML>=6.0
