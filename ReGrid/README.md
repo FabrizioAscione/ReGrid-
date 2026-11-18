@@ -77,7 +77,7 @@ The current release intentionally retains the original research-code organisatio
 
 | Component | Main files |
 | --- | --- |
-| Main workflow and runtime configuration | `unitled.py`, `unitled_helpers.py` |
+| Main workflow and runtime configuration | `main.py`, `main_helpers.py` |
 | Geometry and mesh generation | `geometry.py`, `mesh.py` |
 | Materials and steel-section data | `materials.py`, `import_section.py`, `sections_1.csv` |
 | OpenSees model and analyses | `OS_*.py` |
@@ -90,6 +90,48 @@ The current release intentionally retains the original research-code organisatio
 
 Additional notes on the mechanical optimisation workflow are provided in [`OPT_MECH_2_EXPLANATION.txt`](OPT_MECH_2_EXPLANATION.txt).
 
+## Special Features
+
+ReGrid includes two graphical interfaces designed to simplify both the definition of the analysis workflow and the post-processing of optimisation results.
+
+### ReGrid Graphical User Interface
+
+A dedicated Streamlit-based graphical user interface is provided through `app.py`. The interface allows users to configure and run ReGrid without directly modifying the source code or the `config.yaml` file.
+
+Different workflows can be selected depending on the purpose of the analysis, including:
+
+- structural analysis;
+- mechanical design and section optimisation;
+- reuse-based design using reclaimed steel inventories;
+- single- and multi-objective structural optimisation, with or without steel reuse.
+
+The interface dynamically displays only the parameters relevant to the selected workflow, including geometry, loading conditions, structural constraints, reclaimed-stock properties, corrosion scenarios, optimisation settings and nonlinear analysis options.
+
+After completion of the analysis, the interface also provides direct access to the generated results, including figures, CSV files, Excel workbooks, DXF files and complete result packages.
+
+The GUI can be launched with:
+
+```bash
+python -m streamlit run app.py
+```
+
+or, on Windows, through the provided `run_gui.bat` file.
+
+### Interactive Pareto-Front Selection
+
+For multi-objective optimisation problems, ReGrid also includes a dedicated Pareto-front graphical interface for the interactive exploration of non-dominated solutions.
+
+Once the optimisation process is completed, the interface allows the user to inspect the Pareto front and select individual solutions according to the preferred trade-off between the considered objectives, such as structural performance, embodied carbon and economic cost.
+
+From the Pareto-selection interface, the user can also:
+
+- select a preferred Pareto-optimal solution for further investigation;
+- launch nonlinear structural analysis directly on the selected solution;
+- perform nonlinear analyses on multiple Pareto solutions;
+- continue the optimisation process by launching additional generations;
+- compare selected reuse-based solutions with reference structural configurations.
+
+This feature allows the optimisation process to remain interactive, enabling the user to move from the exploration of alternative design solutions to detailed nonlinear verification without restarting the complete ReGrid workflow.
 ## Requirements
 
 The current environment was developed and tested with **Python 3.10** on Windows. The exact package versions used in the development environment are listed in [`requirements.txt`](requirements.txt).
@@ -123,10 +165,10 @@ The local `.venv` directory is intentionally excluded from version control.
 The current main research script is:
 
 ```bash
-python unitled.py
+python main.py
 ```
 
-The main model and analysis options are defined in the **USER INPUT** section near the beginning of `unitled.py`. These include geometry, mesh, section catalogue, corrosion settings, loading, reclaimed-stock matching, and optimisation parameters.
+The main model and analysis options are defined in the **USER INPUT** section near the beginning of `main.py`. These include geometry, mesh, section catalogue, corrosion settings, loading, reclaimed-stock matching, and optimisation parameters.
 
 By default, generated results are written to an `outputs/` directory. Generated outputs are excluded from Git version control.
 
