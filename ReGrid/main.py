@@ -1,4 +1,4 @@
-﻿#---------------------------------------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------
 #===============================================================FUNCTIONS===============================================================
 #---------------------------------------------------------------------------------------------------------------------------------------
 import csv
@@ -6,6 +6,8 @@ import json
 import os
 import multiprocessing
 import shutil
+from pathlib import Path
+import yaml
 from dataclasses import replace
 from transparent_plots import configure_transparent_matplotlib_saves
 
@@ -80,9 +82,9 @@ from reuse_genetic_opt import (
     load_candidate_metrics_csv,
     ReuseGeneticOptimizationResult,
 )
-from unitled_helpers import build_output_path as _build_output_path
-from unitled_helpers import build_fiber_section_opts as _build_fiber_section_opts
-from unitled_helpers import load_batch_runtime
+from main_helpers import build_output_path as _build_output_path
+from main_helpers import build_fiber_section_opts as _build_fiber_section_opts
+from main_helpers import load_batch_runtime
 #----------------------------------------------------------PYTON-CODE-WRITERS-----------------------------------------------------------
 W_el = PyWriter()                                                                       # .py code - elastic analysis
 W_non_lin = PyWriter()                                                                  # .py code - non linear analysis
@@ -115,38 +117,77 @@ def _build_ga_variable_control(enabled, raw_range, default_pair):
 #---------------------------------------------------------------------------------------------------------------------------------------
 #==============================================================USER INPUT===============================================================
 #---------------------------------------------------------------------------------------------------------------------------------------
+# All user-configurable parameters are loaded from config.yaml.
+# Existing command-line/batch overrides keep precedence over the YAML values.
+
+_CONFIG_PATH = Path(__file__).resolve().parent / "config.yaml"
+if not _CONFIG_PATH.exists():
+    raise FileNotFoundError(
+        f"ReGrid configuration file not found: {_CONFIG_PATH}. "
+        "Place config.yaml in the same directory as main.py."
+    )
+
+with _CONFIG_PATH.open("r", encoding="utf-8") as _config_file:
+    CFG = yaml.safe_load(_config_file)
+
+if not isinstance(CFG, dict):
+    raise ValueError("config.yaml must contain a YAML mapping at the top level.")
+
+
+def _cfg(*keys):
+    """Return a required nested value from config.yaml."""
+    value = CFG
+    for key in keys:
+        if not isinstance(value, dict) or key not in value:
+            path = ".".join(str(k) for k in keys)
+            raise KeyError(f"Missing required configuration value: {path}")
+        value = value[key]
+    return value
+
+
+def _cfg_batch(batch_name, *keys):
+    """Batch/CLI override takes precedence over the corresponding YAML value."""
+    return _batch_overrides.get(batch_name, _cfg(*keys))
+
+
 #---------------------------------------------------------------GEOMETRY----------------------------------------------------------------
-geom = _batch_overrides.get("geom", 3)                                                  # 1 = Barrel vault, 2 = Dome
-B = _batch_overrides.get("B", 30)                                                       # x dimension
-L = _batch_overrides.get("L", 30)                                                       # y dimension
-f = _batch_overrides.get("f", B/8)                                                      # maximum rise
-nx = _batch_overrides.get("nx", 11)                                                     # n subdivision along x
-ny = _batch_overrides.get("ny", 11)                                                     # n subdivision along y
-grid = _batch_overrides.get("grid", 1)                                                  # 1 = quadrangular, 2 = triangular /
+geom = _cfg_batch("geom", "geometry", "geom")
+B = _cfg_batch("B", "geometry", "B")
+L = _cfg_batch("L", "geometry", "L")
+f = _cfg_batch("f", "geometry", "f")
+nx = _cfg_batch("nx", "geometry", "nx")
+ny = _cfg_batch("ny", "geometry", "ny")
+grid = _cfg_batch("grid", "geometry", "grid")
+
 #-----------------------------------------------------------SECTION AND MATERIAL---------------------------------------------------------
-output_dir = _cli_args.output_dir or _batch_overrides.get("output_dir", "outputs")      # output directory for all results and reports
-os.makedirs(output_dir, exist_ok=True)                                                  # ensure output directory exists  
-dxf_export = _build_output_path(output_dir, "geom_mesh.dxf")                            # dxf export file name
-csv_path= "sections_1.csv"                                                              # csv section file name
-units_in  = "cm"                                                                        # CSV file units
-units_out = "m"                                                                         # current file units
+output_dir = _cli_args.output_dir or _batch_overrides.get("output_dir", _cfg("files", "output_dir"))
+os.makedirs(output_dir, exist_ok=True)
+dxf_export = _build_output_path(output_dir, "geom_mesh.dxf")
+csv_path = _cfg("files", "section_catalogue")
+units_in = _cfg("units", "section_catalogue_input")
+units_out = _cfg("units", "model_output")
+
 #-------------------------------------------------------------CORROSION----------------------------------------------------------------
-corrosion_enabled = _batch_overrides.get("corrosion_enabled", True)                     # plot simplified corrosion scenario
-corrosion_period_end_years = _batch_overrides.get(
-    "corrosion_period_end_years",
-    (20, 36, 50),
-)                                                                                       # end year of each corrosion period
-corrosion_categories = _batch_overrides.get(
-    "corrosion_categories",
-    ("C3", "C3", "C3"),
-)                                                                                       # corrosivity class for each period
-corrosion_curve_path = _build_output_path(output_dir, "corrosion_curve.png")            # corrosion curve output
-corrosion_curve_data_path = _build_output_path(output_dir, "corrosion_curve_data.csv")  # corrosion curve data output
-corrosion_apply_to_database = _batch_overrides.get("corrosion_apply_to_database", False) # create and use corroded section csv
-corrosion_application_mode = _batch_overrides.get("corrosion_application_mode", "all")  # all, flanges, web
-corrosion_drop_invalid_sections = _batch_overrides.get("corrosion_drop_invalid_sections", True)
-corrosion_csv_path = _build_output_path(output_dir, "sections_corroded.csv")            # corroded section catalog
-corrosion_loss_cm = 0.0                                                                 # final uniform corrosion loss [cm]
+corrosion_enabled = _cfg_batch("corrosion_enabled", "corrosion", "enabled")
+corrosion_period_end_years = tuple(
+    _cfg_batch("corrosion_period_end_years", "corrosion", "period_end_years")
+)
+corrosion_categories = tuple(
+    _cfg_batch("corrosion_categories", "corrosion", "categories")
+)
+corrosion_curve_path = _build_output_path(output_dir, "corrosion_curve.png")
+corrosion_curve_data_path = _build_output_path(output_dir, "corrosion_curve_data.csv")
+corrosion_apply_to_database = _cfg_batch(
+    "corrosion_apply_to_database", "corrosion", "apply_to_section_database"
+)
+corrosion_application_mode = _cfg_batch(
+    "corrosion_application_mode", "corrosion", "application_mode"
+)
+corrosion_drop_invalid_sections = _cfg_batch(
+    "corrosion_drop_invalid_sections", "corrosion", "drop_invalid_sections"
+)
+corrosion_csv_path = _build_output_path(output_dir, "sections_corroded.csv")
+corrosion_loss_cm = 0.0
 corrosion_catalog_summary = None
 if corrosion_enabled:
     corrosion_loss_cm, corrosion_curve_path = calculate_and_plot_three_period_corrosion(
@@ -164,41 +205,63 @@ if corrosion_enabled:
             drop_invalid=corrosion_drop_invalid_sections,
         )
         csv_path = corrosion_csv_path
-s_1 = "Ø 101,6 s 10"                                                                 # starter section 
-m_1 = ("elastic", 355000, 210000000, 80000000)                                          # elastic-fyk,E,G;
-m_2 = ("steel01", 355000, 210000000, 80000000, 0.0)                                   # steel01-fyk,E,G,b; post-yield tangent = 0.1% of E
-m_3 = ("steel02", 355000, 210000000, 80000000, 0.0)                                     # steel02-fyk,E,G,b
-m_4 = ("PPmat",  355000, 210000000, 80000000, 0.00169)                                  # PPmat-fyk,E,G,ey
-m_5 = ("Hardening",  210000000, 355000, 0, 1000)                                        # Hardening-E,fyk, H_iso, H_kin
+
+s_1 = _cfg("section_and_material", "starter_section")
+m_1 = tuple(_cfg("section_and_material", "materials", "m_1"))
+m_2 = tuple(_cfg("section_and_material", "materials", "m_2"))
+m_3 = tuple(_cfg("section_and_material", "materials", "m_3"))
+m_4 = tuple(_cfg("section_and_material", "materials", "m_4"))
+m_5 = tuple(_cfg("section_and_material", "materials", "m_5"))
+
 #-----------------------------------------------------------LOADS AND CONSTRAINTS---------------------------------------------------------
-ndm = 3                                                                                 # nÂ° dimension
-ndf = 6                                                                                 # nÂ° dof
-c1 = (1,1,1,0,0,0)                                                                      # boundary points x = B/2
-c2 = (1,1,1,0,0,0)                                                                      # boundary points x = -B/2
-c3 = (1,1,1,0,0,0)                                                                      # boundary points y = L/2
-c4 = (1,1,1,0,0,0)                                                                      # boundary points y = -L/2
-c5 = (1,1,1,0,0,0)                                                                      # Corner points
-q1 = (0.0, 0.0, 1.8, "symmetrical")                                                     # (1st condition: x,y,z,"symmetrical" 
-q2 = (0.0, 0.0, 0.6, "symmetrical",                                                     # (2nd condition: x,y,z, "symmetrical",freegrid_lc2
-      0.0, 0.0, 1.2, "asymmetrical", 1,4)                                               # (x,y,z, "asymmetrical",1,2,3,4)
-load_el = q1                                                                            # Load for analysis
+ndm = _cfg("model", "ndm")
+ndf = _cfg("model", "ndf")
+c1 = tuple(_cfg("boundary_conditions", "c1"))
+c2 = tuple(_cfg("boundary_conditions", "c2"))
+c3 = tuple(_cfg("boundary_conditions", "c3"))
+c4 = tuple(_cfg("boundary_conditions", "c4"))
+c5 = tuple(_cfg("boundary_conditions", "c5"))
+
+_q1_cfg = _cfg("loads", "q1")
+q1 = (*_q1_cfg["values"], _q1_cfg["distribution"])
+
+_q2_cfg = _cfg("loads", "q2")
+q2 = (
+    *_q2_cfg["symmetrical_values"],
+    _q2_cfg["symmetrical_distribution"],
+    *_q2_cfg["asymmetrical_values"],
+    _q2_cfg["asymmetrical_distribution"],
+    *_q2_cfg["asymmetrical_region"],
+)
+
+_active_load_case = str(_cfg("loads", "active_elastic_load_case")).strip().lower()
+if _active_load_case == "q1":
+    load_el = q1
+elif _active_load_case == "q2":
+    load_el = q2
+else:
+    raise ValueError("loads.active_elastic_load_case must be 'q1' or 'q2'.")
+
 #----------------------------------------------------------LINEAR ELASTIC ANALYSIS--------------------------------------------------------
-section_type = "1forall"                                                                # 1forall,user
-section_assignment_json = _build_output_path(output_dir, "section_assignment.json")     # saved user assignment map
-section_assignment_report = _build_output_path(output_dir, "section_assignment.txt")    # saved user assignment report
-section_selector_show_labels = False                                                    # show member labels in selector
+section_type = _cfg("linear_elastic", "section_type")
+section_assignment_json = _build_output_path(output_dir, "section_assignment.json")
+section_assignment_report = _build_output_path(output_dir, "section_assignment.txt")
+section_selector_show_labels = bool(_cfg("linear_elastic", "section_selector_show_labels"))
+
 #-----------------------------------------------------------REUSED STOCK MATCHING----------------------------------------------------------
-reuse_matching_enabled = False                                                          # Toggle 
-reuse_csv_path = "Database_reuse_2.csv"                                                 # reused stock 
-reuse_length_units_in = "m"                                                             # units for stock element length column L
-reuse_max_cut_length = 10                                                               # None = no upper bound on allowed trimming length
-reuse_min_remainder_length = 3                                                          # minimum leftover length kept in remaining stock [m]
-reuse_group_sizes = (1,2,4)                                                               # allowed assemblies from reused L members 1,2,4
-reuse_remaining_csv = _build_output_path(output_dir, "reused_stock_remaining.csv")      # remained database csv
-reuse_report_txt = _build_output_path(output_dir, "reuse_matching_report.txt")          # matching report txt
-reuse_sections_used_csv = _build_output_path(output_dir, "sections_used.csv")           # used database csv
-reuse_corrosion_apply_to_database = _batch_overrides.get("reuse_corrosion_apply_to_database", False) # create and use corroded reused stock csv
-reuse_corrosion_csv_path = _build_output_path(output_dir, "Database_reuse_corroded.csv") # corroded reused stock csv
+reuse_matching_enabled = bool(_cfg("reuse", "matching_enabled"))
+reuse_csv_path = _cfg("reuse", "stock_csv")
+reuse_length_units_in = _cfg("reuse", "length_units_in")
+reuse_max_cut_length = _cfg("reuse", "max_cut_length")
+reuse_min_remainder_length = _cfg("reuse", "min_remainder_length")
+reuse_group_sizes = tuple(_cfg("reuse", "group_sizes"))
+reuse_remaining_csv = _build_output_path(output_dir, "reused_stock_remaining.csv")
+reuse_report_txt = _build_output_path(output_dir, "reuse_matching_report.txt")
+reuse_sections_used_csv = _build_output_path(output_dir, "sections_used.csv")
+reuse_corrosion_apply_to_database = _cfg_batch(
+    "reuse_corrosion_apply_to_database", "corrosion", "apply_to_reuse_database"
+)
+reuse_corrosion_csv_path = _build_output_path(output_dir, "Database_reuse_corroded.csv")
 reuse_corrosion_catalog_summary = None
 reuse_corrosion_database_plots = None
 if corrosion_enabled and reuse_corrosion_apply_to_database:
@@ -215,191 +278,351 @@ if corrosion_enabled and reuse_corrosion_apply_to_database:
         prefix="reuse_corroded_database",
     )
     reuse_csv_path = reuse_corrosion_csv_path
-gamma_steel = 78.5                                                                      # steel unit weight [kN/m^3]
-ecf_new = _batch_overrides.get("ecf_new", 2.5)                                          # environmental conversion factor for new steel [impact / metric tonne]
-ecf_reused = _batch_overrides.get("ecf_reused", 0.27)                                   # environmental conversion factor for reused steel [impact / metric tonne]
-ecf_work = _batch_overrides.get("ecf_work", 0.00)                                       # environmental work factor per cut [impact / cut]
-ecf_scrap = _batch_overrides.get("ecf_scrap", 0.27)                                     # environmental credit for scrap [impact / metric tonne]
-cost_new = _batch_overrides.get("cost_new", 1250)                                       # supply cost for new steel [currency / metric tonne]
-cost_reused = _batch_overrides.get("cost_reused", 550)                                  # supply cost for reused steel [currency / metric tonne]
-cost_work = _batch_overrides.get("cost_work", 0.00)                                     # fabrication cost per cut [currency / cut]
-cost_scrap = _batch_overrides.get("cost_scrap", 250)                                    # scrap credit [currency / metric tonne]
+
+gamma_steel = _cfg("reuse", "gamma_steel")
+ecf_new = _cfg_batch("ecf_new", "impact_and_cost", "ecf_new")
+ecf_reused = _cfg_batch("ecf_reused", "impact_and_cost", "ecf_reused")
+ecf_work = _cfg_batch("ecf_work", "impact_and_cost", "ecf_work")
+ecf_scrap = _cfg_batch("ecf_scrap", "impact_and_cost", "ecf_scrap")
+cost_new = _cfg_batch("cost_new", "impact_and_cost", "cost_new")
+cost_reused = _cfg_batch("cost_reused", "impact_and_cost", "cost_reused")
+cost_work = _cfg_batch("cost_work", "impact_and_cost", "cost_work")
+cost_scrap = _cfg_batch("cost_scrap", "impact_and_cost", "cost_scrap")
+
 #------------------------------------------------------REUSE + GENETIC GRID OPTIMIZATION----------------------------------------------------
-reuse_genetic_opt = False                                                                                        # optimization loop for reuse workflow
-genetic_matching_reuse = False                                                                                   # internal reuse matching inside the genetic loop
-genetic_mech_solver = _batch_overrides.get("genetic_mech_solver", "ec3")                                        # "fast" or "ec3" for the internal mechanical solver used by the genetic loop
-genetic_opt_mech = _batch_overrides.get("genetic_opt_mech", 2)                                                  # 1 or 2 for the internal mechanical optimizer used by the genetic loop
-genetic_move_range_x = _batch_overrides.get("genetic_move_range_x", (-0.5, 0.5))                                # per-node dx bounds for the active quarter [m]
-genetic_move_range_y = _batch_overrides.get("genetic_move_range_y", (-0.5, 0.5))                                # per-node dy bounds for the active quarter [m]
-genetic_objective_mode = _batch_overrides.get("genetic_objective_mode", "multi")                                # "mono" uses only obj_1, "multi" uses obj_1..obj_3
-genetic_obj_1 = _batch_overrides.get("genetic_obj_1", "pi_mass")                                                # e.g. "pi_mass", "pi_ec", "pi_mr", "pi_cost", "mass", "cost", "reuse_ratio", "reuse_efficiency", "reuse_ratio_members", "dcr_max", "lscrap", "n_cuts", "max_abs_uz", "lambda_ref", "ec"
-genetic_obj_2 = _batch_overrides.get("genetic_obj_2", "pi_ec")                                                  # optional in mono mode
-genetic_obj_3 = _batch_overrides.get("genetic_obj_3", "pi_cost")                                                # optional third objective in multi mode
-genetic_reference_mode = _batch_overrides.get("genetic_reference_mode", "fixed_base")                           # "candidate_new" or "fixed_base"
-genetic_select_pareto_for_nl = _batch_overrides.get("genetic_select_pareto_for_nl", (not batch_mode))           # if multiobjective and non_lin, open GUI to pick the GMNA solution
-genetic_engine = _batch_overrides.get("genetic_engine", "pymoo")                                                # "auto", "pymoo", "builtin"
-genetic_population = _batch_overrides.get("genetic_population", 1500)                                            # population size
-genetic_generations = _batch_overrides.get("genetic_generations", 10)                                            # number of generations 
-genetic_seed = _batch_overrides.get("genetic_seed", 42)                                                         # random seed for repeatability
-genetic_verbose = _batch_overrides.get("genetic_verbose", 1)                                                    # 0=silent, 1=progress summaries
-genetic_progress_heartbeat_s = _batch_overrides.get("genetic_progress_heartbeat_s", 30.0)                       # progress heartbeat file update interval [s]
-genetic_candidate_stall_timeout_s = _batch_overrides.get("genetic_candidate_stall_timeout_s", 900.0)            # None = wait forever; seconds without completed candidate before abort
-genetic_suppress_evaluation_output = _batch_overrides.get("genetic_suppress_evaluation_output", True)           # silence terminal prints produced inside each candidate evaluation
-genetic_terminal_progress_every = _batch_overrides.get("genetic_terminal_progress_every", 50)                   # print terminal candidate progress every N evaluated candidates; also prints first and last
-genetic_n_offsprings = _batch_overrides.get("genetic_n_offsprings", None)                                       # None -> pymoo default (= population size)
-genetic_sampling = _batch_overrides.get("genetic_sampling", "lhs")                                              # "real_random" or "lhs" for pymoo
-genetic_eliminate_duplicates = _batch_overrides.get("genetic_eliminate_duplicates", True)                       # remove duplicate candidates in pymoo
-genetic_crossover_prob = _batch_overrides.get("genetic_crossover_prob", 0.90)                                   # crossover probability (builtin and pymoo)
-genetic_crossover_eta = _batch_overrides.get("genetic_crossover_eta", 10.0)                                     # SBX eta for pymoo crossover
-genetic_mutation_prob = _batch_overrides.get("genetic_mutation_prob", 0.50)                                     # mutation probability (builtin and pymoo)
-genetic_mutation_eta = _batch_overrides.get("genetic_mutation_eta", 10.0)                                       # PM eta for pymoo mutation
-genetic_n_workers = _batch_overrides.get("genetic_n_workers", 20)                                               # 1 = serial GA; use 8/10 to spread candidate evaluations across CPU cores
-genetic_mutation_scale = _batch_overrides.get("genetic_mutation_scale", 0.10)                                   # gaussian mutation scale for builtin GA
-genetic_buckling_mode = 1                                                                                       # buckling mode index used in the constraints
-genetic_dcr_limit = _batch_overrides.get("genetic_dcr_limit", 1)                                                # final DCR limit used by the GA feasibility check
-genetic_disp_limit = _batch_overrides.get("genetic_disp_limit", 0.15)                                           # final Uz limit used by the GA feasibility check
-genetic_buckling_lambda_min = _batch_overrides.get("genetic_buckling_lambda_min", 1.0)                          # final buckling limit used by the GA feasibility check
-genetic_use_merchant_rankine_constraint = _batch_overrides.get("genetic_use_merchant_rankine_constraint", True) # optional Merchant-Rankine constraint inside the genetic loop
-genetic_merchant_rankine_min = _batch_overrides.get("genetic_merchant_rankine_min", 1.0)                        # minimum admissible Merchant-Rankine factor when enabled
-genetic_merchant_rankine_mode = _batch_overrides.get("genetic_merchant_rankine_mode", 1)                        # buckling mode used for Merchant-Rankine; None -> use genetic_buckling_mode
-genetic_reuse_member_mask_enabled = _batch_overrides.get("genetic_reuse_member_mask_enabled", True)             # if True the GA assigns a binary reuse tag to each member
-genetic_reuse_member_mask_threshold = _batch_overrides.get("genetic_reuse_member_mask_threshold", 0.5)          # reuse tag >= threshold -> member enters matching
-genetic_reuse_member_mask_mode = _batch_overrides.get("genetic_reuse_member_mask_mode", "symmetric")            # "member", "symmetric", or "global"
-genetic_control_ga_dcr_limit = _batch_overrides.get("genetic_control_ga_dcr_limit", False)
-genetic_control_ga_dcr_limit_range = _batch_overrides.get("genetic_control_ga_dcr_limit_range", (0.1, 1.00))
-genetic_control_ga_disp_limit = _batch_overrides.get("genetic_control_ga_disp_limit", False)
-genetic_control_ga_disp_limit_range = _batch_overrides.get("genetic_control_ga_disp_limit_range", (0.05, 0.30))
-genetic_control_ga_buckling_limit = _batch_overrides.get("genetic_control_ga_buckling_limit", False)
-genetic_control_ga_buckling_limit_range = _batch_overrides.get("genetic_control_ga_buckling_limit_range", (1.0, 5.0))
-genetic_control_ga_mr_limit = _batch_overrides.get("genetic_control_ga_mr_limit", False)
-genetic_control_ga_mr_limit_range = _batch_overrides.get("genetic_control_ga_mr_limit_range", (1.0, 3.0))
-genetic_control_reuse_max_cut_length = _batch_overrides.get("genetic_control_reuse_max_cut_length", False)
-genetic_control_reuse_max_cut_length_range = _batch_overrides.get("genetic_control_reuse_max_cut_length_range", (0.0, 10.0))  # sampled by the GA and rounded to integer metres before reuse matching
-genetic_control_opt_dcr_limit = _batch_overrides.get("genetic_control_opt_dcr_limit", False)
-genetic_control_opt_dcr_limit_range = _batch_overrides.get("genetic_control_opt_dcr_limit_range", (0.1, 0.9))
-genetic_control_opt_dlim = _batch_overrides.get("genetic_control_opt_dlim", False)
-genetic_control_opt_dlim_range = _batch_overrides.get("genetic_control_opt_dlim_range", (0.05, 0.30))
-genetic_control_opt_buckling_limit = _batch_overrides.get("genetic_control_opt_buckling_limit", False)
-genetic_control_opt_buckling_limit_range = _batch_overrides.get("genetic_control_opt_buckling_limit_range", (1.0, 5.0))
-genetic_control_opt_mr_limit = _batch_overrides.get("genetic_control_opt_mr_limit", False)
-genetic_control_opt_mr_limit_range = _batch_overrides.get("genetic_control_opt_mr_limit_range", (1.0, 3.0))
-genetic_history_json = _build_output_path(output_dir, "reuse_genetic_history.json")     # generations history
-genetic_summary_json = _build_output_path(output_dir, "reuse_genetic_summary.json")     # best-candidate summary
-genetic_pareto_json = _build_output_path(output_dir, "reuse_genetic_pareto_front.json") # Pareto front export
-genetic_pareto_csv = _build_output_path(output_dir, "reuse_genetic_pareto_front.csv")   # Pareto front table
-genetic_pareto_global_json = _build_output_path(output_dir, "reuse_genetic_pareto_front_global.json") # Global Pareto export across all evaluated unique candidates
-genetic_pareto_global_csv = _build_output_path(output_dir, "reuse_genetic_pareto_front_global.csv")   # Global Pareto table across all evaluated unique candidates
-genetic_pareto_candidate_metrics_csv = _build_output_path(output_dir, "pareto_candidate_metrics.csv")  # Pareto-only candidate metrics table
-genetic_pareto_plot = _build_output_path(output_dir, "reuse_genetic_pareto_front.png")  # Pareto front plot (2D/3D)
-genetic_pareto_only_plot = _build_output_path(output_dir, "reuse_genetic_pareto_only.png")  # Pareto-only plot saved from GUI
-genetic_material_takeoff_dir = _build_output_path(output_dir, "pareto_material_takeoffs") # per-Pareto reused/new/scrap CSV takeoffs
-genetic_parallel_coords_plot = _build_output_path(output_dir, "reuse_genetic_parallel_coords.png")  # Parallel-coordinates plot saved from GUI
-genetic_pareto_fixed_parallel_coords_plot = _build_output_path(output_dir, "reuse_genetic_parallel_coords_pareto_fixed_base.png")  # Pareto metrics plus fixed-base reference
-genetic_pareto_metrics_parallel_coords_plot = _build_output_path(output_dir, "reuse_genetic_parallel_coords_pareto_metrics.png")  # Pareto-only metrics plot
-genetic_fixed_reference_json = _build_output_path(output_dir, "genetic_fixed_reference_summary.json")  # fixed-base comparison summary
-genetic_output_dir = _build_output_path(output_dir, "genetic_search")                   # folder for per-candidate genetic outputs
-genetic_resume_from_metrics = bool(_batch_overrides.get("genetic_resume_from_metrics", False))                  # headless resume from previous genetic_candidate_metrics.csv
-genetic_resume_metrics_csv = _batch_overrides.get("genetic_resume_metrics_csv", _build_output_path(genetic_output_dir, "genetic_candidate_metrics.csv"))
-genetic_headless_exit_after_ga = bool(_batch_overrides.get("genetic_headless_exit_after_ga", False))                    # exit after GA exports, without GUI/final analyses
+reuse_genetic_opt = bool(_cfg("genetic", "enabled"))
+genetic_matching_reuse = bool(_cfg("genetic", "matching_reuse_inside_loop"))
+genetic_mech_solver = _cfg_batch("genetic_mech_solver", "genetic", "mech_solver")
+genetic_opt_mech = _cfg_batch("genetic_opt_mech", "genetic", "opt_mech")
+genetic_move_range_x = tuple(_cfg_batch("genetic_move_range_x", "genetic", "move_range_x"))
+genetic_move_range_y = tuple(_cfg_batch("genetic_move_range_y", "genetic", "move_range_y"))
+genetic_objective_mode = _cfg_batch("genetic_objective_mode", "genetic", "objective_mode")
+genetic_obj_1 = _cfg_batch("genetic_obj_1", "genetic", "obj_1")
+genetic_obj_2 = _cfg_batch("genetic_obj_2", "genetic", "obj_2")
+genetic_obj_3 = _cfg_batch("genetic_obj_3", "genetic", "obj_3")
+genetic_reference_mode = _cfg_batch("genetic_reference_mode", "genetic", "reference_mode")
+_genetic_select_pareto_cfg = bool(_cfg("genetic", "select_pareto_for_nonlinear")) and (not batch_mode)
+genetic_select_pareto_for_nl = _batch_overrides.get(
+    "genetic_select_pareto_for_nl", _genetic_select_pareto_cfg
+)
+genetic_engine = _cfg_batch("genetic_engine", "genetic", "engine")
+genetic_population = _cfg_batch("genetic_population", "genetic", "population")
+genetic_generations = _cfg_batch("genetic_generations", "genetic", "generations")
+genetic_seed = _cfg_batch("genetic_seed", "genetic", "seed")
+genetic_verbose = _cfg_batch("genetic_verbose", "genetic", "verbose")
+genetic_progress_heartbeat_s = _cfg_batch(
+    "genetic_progress_heartbeat_s", "genetic", "progress_heartbeat_s"
+)
+genetic_candidate_stall_timeout_s = _cfg_batch(
+    "genetic_candidate_stall_timeout_s", "genetic", "candidate_stall_timeout_s"
+)
+genetic_suppress_evaluation_output = _cfg_batch(
+    "genetic_suppress_evaluation_output", "genetic", "suppress_evaluation_output"
+)
+genetic_terminal_progress_every = _cfg_batch(
+    "genetic_terminal_progress_every", "genetic", "terminal_progress_every"
+)
+genetic_n_offsprings = _cfg_batch("genetic_n_offsprings", "genetic", "n_offsprings")
+genetic_sampling = _cfg_batch("genetic_sampling", "genetic", "sampling")
+genetic_eliminate_duplicates = _cfg_batch(
+    "genetic_eliminate_duplicates", "genetic", "eliminate_duplicates"
+)
+genetic_crossover_prob = _cfg_batch(
+    "genetic_crossover_prob", "genetic", "crossover", "probability"
+)
+genetic_crossover_eta = _cfg_batch(
+    "genetic_crossover_eta", "genetic", "crossover", "eta"
+)
+genetic_mutation_prob = _cfg_batch(
+    "genetic_mutation_prob", "genetic", "mutation", "probability"
+)
+genetic_mutation_eta = _cfg_batch(
+    "genetic_mutation_eta", "genetic", "mutation", "eta"
+)
+genetic_n_workers = _cfg_batch("genetic_n_workers", "genetic", "n_workers")
+genetic_mutation_scale = _cfg_batch(
+    "genetic_mutation_scale", "genetic", "mutation", "scale"
+)
+genetic_buckling_mode = _cfg("genetic", "buckling_mode")
+genetic_dcr_limit = _cfg_batch("genetic_dcr_limit", "genetic", "dcr_limit")
+genetic_disp_limit = _cfg_batch("genetic_disp_limit", "genetic", "displacement_limit")
+genetic_buckling_lambda_min = _cfg_batch(
+    "genetic_buckling_lambda_min", "genetic", "buckling_lambda_min"
+)
+genetic_use_merchant_rankine_constraint = _cfg_batch(
+    "genetic_use_merchant_rankine_constraint", "genetic", "merchant_rankine", "enabled"
+)
+genetic_merchant_rankine_min = _cfg_batch(
+    "genetic_merchant_rankine_min", "genetic", "merchant_rankine", "minimum"
+)
+genetic_merchant_rankine_mode = _cfg_batch(
+    "genetic_merchant_rankine_mode", "genetic", "merchant_rankine", "mode"
+)
+if genetic_merchant_rankine_mode is None:
+    genetic_merchant_rankine_mode = genetic_buckling_mode
+
+genetic_reuse_member_mask_enabled = _cfg_batch(
+    "genetic_reuse_member_mask_enabled", "genetic", "reuse_member_mask", "enabled"
+)
+genetic_reuse_member_mask_threshold = _cfg_batch(
+    "genetic_reuse_member_mask_threshold", "genetic", "reuse_member_mask", "threshold"
+)
+genetic_reuse_member_mask_mode = _cfg_batch(
+    "genetic_reuse_member_mask_mode", "genetic", "reuse_member_mask", "mode"
+)
+
+_gc = _cfg("genetic", "controlled_variables")
+genetic_control_ga_dcr_limit = _batch_overrides.get(
+    "genetic_control_ga_dcr_limit", bool(_gc["ga_dcr_limit"]["enabled"])
+)
+genetic_control_ga_dcr_limit_range = _batch_overrides.get(
+    "genetic_control_ga_dcr_limit_range", tuple(_gc["ga_dcr_limit"]["range"])
+)
+genetic_control_ga_disp_limit = _batch_overrides.get(
+    "genetic_control_ga_disp_limit", bool(_gc["ga_displacement_limit"]["enabled"])
+)
+genetic_control_ga_disp_limit_range = _batch_overrides.get(
+    "genetic_control_ga_disp_limit_range", tuple(_gc["ga_displacement_limit"]["range"])
+)
+genetic_control_ga_buckling_limit = _batch_overrides.get(
+    "genetic_control_ga_buckling_limit", bool(_gc["ga_buckling_limit"]["enabled"])
+)
+genetic_control_ga_buckling_limit_range = _batch_overrides.get(
+    "genetic_control_ga_buckling_limit_range", tuple(_gc["ga_buckling_limit"]["range"])
+)
+genetic_control_ga_mr_limit = _batch_overrides.get(
+    "genetic_control_ga_mr_limit", bool(_gc["ga_merchant_rankine_limit"]["enabled"])
+)
+genetic_control_ga_mr_limit_range = _batch_overrides.get(
+    "genetic_control_ga_mr_limit_range", tuple(_gc["ga_merchant_rankine_limit"]["range"])
+)
+genetic_control_reuse_max_cut_length = _batch_overrides.get(
+    "genetic_control_reuse_max_cut_length", bool(_gc["reuse_max_cut_length"]["enabled"])
+)
+genetic_control_reuse_max_cut_length_range = _batch_overrides.get(
+    "genetic_control_reuse_max_cut_length_range", tuple(_gc["reuse_max_cut_length"]["range"])
+)
+genetic_control_opt_dcr_limit = _batch_overrides.get(
+    "genetic_control_opt_dcr_limit", bool(_gc["optimizer_dcr_limit"]["enabled"])
+)
+genetic_control_opt_dcr_limit_range = _batch_overrides.get(
+    "genetic_control_opt_dcr_limit_range", tuple(_gc["optimizer_dcr_limit"]["range"])
+)
+genetic_control_opt_dlim = _batch_overrides.get(
+    "genetic_control_opt_dlim", bool(_gc["optimizer_displacement_limit"]["enabled"])
+)
+genetic_control_opt_dlim_range = _batch_overrides.get(
+    "genetic_control_opt_dlim_range", tuple(_gc["optimizer_displacement_limit"]["range"])
+)
+genetic_control_opt_buckling_limit = _batch_overrides.get(
+    "genetic_control_opt_buckling_limit", bool(_gc["optimizer_buckling_limit"]["enabled"])
+)
+genetic_control_opt_buckling_limit_range = _batch_overrides.get(
+    "genetic_control_opt_buckling_limit_range", tuple(_gc["optimizer_buckling_limit"]["range"])
+)
+genetic_control_opt_mr_limit = _batch_overrides.get(
+    "genetic_control_opt_mr_limit", bool(_gc["optimizer_merchant_rankine_limit"]["enabled"])
+)
+genetic_control_opt_mr_limit_range = _batch_overrides.get(
+    "genetic_control_opt_mr_limit_range", tuple(_gc["optimizer_merchant_rankine_limit"]["range"])
+)
+
+genetic_history_json = _build_output_path(output_dir, "reuse_genetic_history.json")
+genetic_summary_json = _build_output_path(output_dir, "reuse_genetic_summary.json")
+genetic_pareto_json = _build_output_path(output_dir, "reuse_genetic_pareto_front.json")
+genetic_pareto_csv = _build_output_path(output_dir, "reuse_genetic_pareto_front.csv")
+genetic_pareto_global_json = _build_output_path(output_dir, "reuse_genetic_pareto_front_global.json")
+genetic_pareto_global_csv = _build_output_path(output_dir, "reuse_genetic_pareto_front_global.csv")
+genetic_pareto_candidate_metrics_csv = _build_output_path(output_dir, "pareto_candidate_metrics.csv")
+genetic_pareto_plot = _build_output_path(output_dir, "reuse_genetic_pareto_front.png")
+genetic_pareto_only_plot = _build_output_path(output_dir, "reuse_genetic_pareto_only.png")
+genetic_material_takeoff_dir = _build_output_path(output_dir, "pareto_material_takeoffs")
+genetic_parallel_coords_plot = _build_output_path(output_dir, "reuse_genetic_parallel_coords.png")
+genetic_pareto_fixed_parallel_coords_plot = _build_output_path(
+    output_dir, "reuse_genetic_parallel_coords_pareto_fixed_base.png"
+)
+genetic_pareto_metrics_parallel_coords_plot = _build_output_path(
+    output_dir, "reuse_genetic_parallel_coords_pareto_metrics.png"
+)
+genetic_fixed_reference_json = _build_output_path(output_dir, "genetic_fixed_reference_summary.json")
+genetic_output_dir = _build_output_path(output_dir, "genetic_search")
+genetic_resume_from_metrics = bool(
+    _batch_overrides.get("genetic_resume_from_metrics", _cfg("genetic", "resume", "from_metrics"))
+)
+_genetic_resume_metrics_cfg = _cfg("genetic", "resume", "metrics_csv")
+if _genetic_resume_metrics_cfg is None:
+    _genetic_resume_metrics_cfg = _build_output_path(genetic_output_dir, "genetic_candidate_metrics.csv")
+genetic_resume_metrics_csv = _batch_overrides.get(
+    "genetic_resume_metrics_csv", _genetic_resume_metrics_cfg
+)
+genetic_headless_exit_after_ga = bool(
+    _batch_overrides.get(
+        "genetic_headless_exit_after_ga",
+        _cfg("genetic", "resume", "headless_exit_after_ga"),
+    )
+)
+
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%---EC3 CHECKS---%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-gamma_M0 = 1.05                                                           # user input
-gamma_M1 = 1.05                                                           # user input
-gamma_M2 = 1.25                                                           # user input
-beta = 1                                                                  # user input: 1.00=app.app, 2.00=mensola, 0.80=inc.inc.
-compression_sign = "negative"                                             # OpenSees convention in this workflow
-alpha_LT = 0.76                                                           # alpha LT value
+gamma_M0 = _cfg("ec3", "gamma_M0")
+gamma_M1 = _cfg("ec3", "gamma_M1")
+gamma_M2 = _cfg("ec3", "gamma_M2")
+beta = _cfg("ec3", "beta")
+compression_sign = _cfg("ec3", "compression_sign")
+alpha_LT = _cfg("ec3", "alpha_LT")
+
 #----------------------------------------------------------STRUCTURAL OPTIMIZATION---------------------------------------------------------
-optimization = True                                                      # Mechanical optimization
-mecc_opt = 2                                                              # (1=one section, 2=multiple sections)
-opt_dcr_limit = 1                                                       # maximum allowed DCR during optimization
-check_disp = True                                                        # Use displacement as admissibility constraint
-opt_dlim = 0.15                                                           # Maximum admissible vertical lowering |Uz| [m]
-opt_check_buckling = True                                                # Check first linear buckling multiplier during optimization
-opt_buckling_lambda_min = 1                                               # Minimum admissible first linear buckling multiplier
-opt_buckling_mode = 1                                                     # Buckling mode index used by the mechanical optimizer
-opt_check_merchant_rankine = False                                        # Use Merchant-Rankine as an additional admissibility constraint in the mechanical optimizer
-opt_merchant_rankine_min = 1.0                                            # Minimum admissible Merchant-Rankine factor when enabled
-opt_merchant_rankine_mode = 1                                             # Buckling mode used for Merchant-Rankine in the mechanical optimizer; None -> use opt_buckling_mode
-opt_buckling_retries = 100                                                 # Extra uplift retries if buckling governs
-opt_buckling_group_limit = None                                           # None = auto quota based on lambda gap
-opt_section_group_limit = _batch_overrides.get("opt_section_group_limit", 8) # legacy/inactive with restored mechanical optimizer
-opt_section_symmetry = _batch_overrides.get("opt_section_symmetry",  None) # legacy/inactive with restored mechanical optimizer
-opt_demand_grouping = _batch_overrides.get("opt_demand_grouping", True) # legacy/inactive with restored mechanical optimizer
-opt_demand_group_rel_tol = _batch_overrides.get("opt_demand_group_rel_tol", 0.2) # legacy/inactive with restored mechanical optimizer
-opt_max_iter = 100                                                         # maximum optimization iterations for mecc_opt=2
-opt_verbose = 1                                                           # optimization print level (0,1,2)
-section_num = 5                                                           # starting section row
+optimization = bool(_cfg("mechanical_optimization", "enabled"))
+mecc_opt = _cfg("mechanical_optimization", "mode")
+opt_dcr_limit = _cfg("mechanical_optimization", "dcr_limit")
+check_disp = bool(_cfg("mechanical_optimization", "displacement", "check"))
+opt_dlim = _cfg("mechanical_optimization", "displacement", "limit")
+opt_check_buckling = bool(_cfg("mechanical_optimization", "buckling", "check"))
+opt_buckling_lambda_min = _cfg("mechanical_optimization", "buckling", "lambda_min")
+opt_buckling_mode = _cfg("mechanical_optimization", "buckling", "mode")
+opt_check_merchant_rankine = bool(_cfg("mechanical_optimization", "merchant_rankine", "check"))
+opt_merchant_rankine_min = _cfg("mechanical_optimization", "merchant_rankine", "minimum")
+opt_merchant_rankine_mode = _cfg("mechanical_optimization", "merchant_rankine", "mode")
+if opt_merchant_rankine_mode is None:
+    opt_merchant_rankine_mode = opt_buckling_mode
+opt_buckling_retries = _cfg("mechanical_optimization", "buckling", "retries")
+opt_buckling_group_limit = _cfg("mechanical_optimization", "buckling", "group_limit")
+opt_section_group_limit = _batch_overrides.get(
+    "opt_section_group_limit", _cfg("mechanical_optimization", "legacy", "section_group_limit")
+)
+opt_section_symmetry = _batch_overrides.get(
+    "opt_section_symmetry", _cfg("mechanical_optimization", "legacy", "section_symmetry")
+)
+opt_demand_grouping = _batch_overrides.get(
+    "opt_demand_grouping", _cfg("mechanical_optimization", "legacy", "demand_grouping")
+)
+opt_demand_group_rel_tol = _batch_overrides.get(
+    "opt_demand_group_rel_tol", _cfg("mechanical_optimization", "legacy", "demand_group_relative_tolerance")
+)
+opt_max_iter = _cfg("mechanical_optimization", "max_iterations")
+opt_verbose = _cfg("mechanical_optimization", "verbose")
+section_num = _cfg("mechanical_optimization", "start_section_row")
+
 #-------------------------------------GA INTERNAL MECHANICAL OPTIMIZATION (CANDIDATE EVALUATIONS)----------------------------------------
-genetic_opt_start_section_row = _batch_overrides.get("genetic_opt_start_section_row", 5)              # starting section row for the GA internal optimizer
-genetic_opt_max_iter = _batch_overrides.get("genetic_opt_max_iter", 100)                               # maximum optimization iterations for GA candidates
-genetic_opt_dcr_limit = _batch_overrides.get("genetic_opt_dcr_limit", 1)                            # DCR limit for the GA internal optimizer
-genetic_opt_check_disp = _batch_overrides.get("genetic_opt_check_disp", True)                             # use displacement admissibility inside the GA mechanical optimizer
-genetic_opt_dlim = _batch_overrides.get("genetic_opt_dlim", 0.15)                                           # maximum admissible vertical lowering |Uz| [m] inside the GA mechanical optimizer
-genetic_opt_check_buckling = _batch_overrides.get("genetic_opt_check_buckling", True)            # check first linear buckling multiplier inside the GA mechanical optimizer
-genetic_opt_buckling_lambda_min = _batch_overrides.get("genetic_opt_buckling_lambda_min", 1)  # minimum admissible first linear buckling multiplier inside the GA mechanical optimizer
-genetic_opt_buckling_mode = _batch_overrides.get("genetic_opt_buckling_mode", 1)               # buckling mode index used by the GA mechanical optimizer
-genetic_opt_check_merchant_rankine = _batch_overrides.get("genetic_opt_check_merchant_rankine", True)  # use Merchant-Rankine inside the GA mechanical optimizer
-genetic_opt_merchant_rankine_min = _batch_overrides.get("genetic_opt_merchant_rankine_min", 1)  # minimum admissible Merchant-Rankine factor inside the GA mechanical optimizer
-genetic_opt_merchant_rankine_mode = _batch_overrides.get("genetic_opt_merchant_rankine_mode", 1)  # buckling mode used for Merchant-Rankine in the GA mechanical optimizer
-genetic_opt_buckling_retries = _batch_overrides.get("genetic_opt_buckling_retries", 100)      # extra uplift retries if buckling governs in the GA mechanical optimizer
-genetic_opt_buckling_group_limit = _batch_overrides.get("genetic_opt_buckling_group_limit", None)  # None = auto quota based on lambda gap in the GA mechanical optimizer
-genetic_opt_section_group_limit = _batch_overrides.get("genetic_opt_section_group_limit", opt_section_group_limit) # legacy/inactive with restored mechanical optimizer
-genetic_opt_section_symmetry = _batch_overrides.get("genetic_opt_section_symmetry", opt_section_symmetry) # legacy/inactive with restored mechanical optimizer
-genetic_opt_demand_grouping = _batch_overrides.get("genetic_opt_demand_grouping", opt_demand_grouping) # legacy/inactive with restored mechanical optimizer
-genetic_opt_demand_group_rel_tol = _batch_overrides.get("genetic_opt_demand_group_rel_tol", opt_demand_group_rel_tol) # legacy/inactive with restored mechanical optimizer
+genetic_opt_start_section_row = _batch_overrides.get(
+    "genetic_opt_start_section_row", _cfg("genetic_mechanical_optimization", "start_section_row")
+)
+genetic_opt_max_iter = _batch_overrides.get(
+    "genetic_opt_max_iter", _cfg("genetic_mechanical_optimization", "max_iterations")
+)
+genetic_opt_dcr_limit = _batch_overrides.get(
+    "genetic_opt_dcr_limit", _cfg("genetic_mechanical_optimization", "dcr_limit")
+)
+genetic_opt_check_disp = _batch_overrides.get(
+    "genetic_opt_check_disp", _cfg("genetic_mechanical_optimization", "displacement", "check")
+)
+genetic_opt_dlim = _batch_overrides.get(
+    "genetic_opt_dlim", _cfg("genetic_mechanical_optimization", "displacement", "limit")
+)
+genetic_opt_check_buckling = _batch_overrides.get(
+    "genetic_opt_check_buckling", _cfg("genetic_mechanical_optimization", "buckling", "check")
+)
+genetic_opt_buckling_lambda_min = _batch_overrides.get(
+    "genetic_opt_buckling_lambda_min", _cfg("genetic_mechanical_optimization", "buckling", "lambda_min")
+)
+genetic_opt_buckling_mode = _batch_overrides.get(
+    "genetic_opt_buckling_mode", _cfg("genetic_mechanical_optimization", "buckling", "mode")
+)
+genetic_opt_check_merchant_rankine = _batch_overrides.get(
+    "genetic_opt_check_merchant_rankine",
+    _cfg("genetic_mechanical_optimization", "merchant_rankine", "check"),
+)
+genetic_opt_merchant_rankine_min = _batch_overrides.get(
+    "genetic_opt_merchant_rankine_min",
+    _cfg("genetic_mechanical_optimization", "merchant_rankine", "minimum"),
+)
+genetic_opt_merchant_rankine_mode = _batch_overrides.get(
+    "genetic_opt_merchant_rankine_mode",
+    _cfg("genetic_mechanical_optimization", "merchant_rankine", "mode"),
+)
+if genetic_opt_merchant_rankine_mode is None:
+    genetic_opt_merchant_rankine_mode = genetic_opt_buckling_mode
+genetic_opt_buckling_retries = _batch_overrides.get(
+    "genetic_opt_buckling_retries", _cfg("genetic_mechanical_optimization", "buckling", "retries")
+)
+genetic_opt_buckling_group_limit = _batch_overrides.get(
+    "genetic_opt_buckling_group_limit", _cfg("genetic_mechanical_optimization", "buckling", "group_limit")
+)
+genetic_opt_section_group_limit = _batch_overrides.get(
+    "genetic_opt_section_group_limit",
+    _cfg("genetic_mechanical_optimization", "legacy", "section_group_limit"),
+)
+genetic_opt_section_symmetry = _batch_overrides.get(
+    "genetic_opt_section_symmetry",
+    _cfg("genetic_mechanical_optimization", "legacy", "section_symmetry"),
+)
+genetic_opt_demand_grouping = _batch_overrides.get(
+    "genetic_opt_demand_grouping",
+    _cfg("genetic_mechanical_optimization", "legacy", "demand_grouping"),
+)
+genetic_opt_demand_group_rel_tol = _batch_overrides.get(
+    "genetic_opt_demand_group_rel_tol",
+    _cfg("genetic_mechanical_optimization", "legacy", "demand_group_relative_tolerance"),
+)
+
 #------------------------------------------------------------NONLINEAR ANALYSIS------------------------------------------------------------
-non_lin = True                                                            # NonLinear Analysis
-T_fiber_ele = "HingeRadauTwo"                                             # "Lobatto","HingeRadau","HingeRadauTwo"
-lobatto_n_integration_pts = 5                                             # integration sections per subelement
-hinge_lp_ratio = 0.50 if T_fiber_ele == "HingeRadauTwo" else 0.10           # hinge length / subelement length at each end
-Analysis_control = "Force"                                                # "Force","Displacements","ArcLength"
-force_use_fallbacks = True                                               # optional retries with alternate algorithms
-force_use_adaptive_step = False                                           # optional iteration-based step adaptation/cutbacks
+non_lin = bool(_cfg("nonlinear", "enabled"))
+T_fiber_ele = _cfg("nonlinear", "fiber_element")
+lobatto_n_integration_pts = _cfg("nonlinear", "lobatto_n_integration_points")
+_hinge_lp_cfg = _cfg("nonlinear", "hinge_length_ratio")
+if isinstance(_hinge_lp_cfg, str) and _hinge_lp_cfg.strip().lower() == "auto":
+    hinge_lp_ratio = 0.50 if T_fiber_ele == "HingeRadauTwo" else 0.10
+else:
+    hinge_lp_ratio = float(_hinge_lp_cfg)
+Analysis_control = _cfg("nonlinear", "analysis_control")
+force_use_fallbacks = bool(_cfg("nonlinear", "force_control", "use_fallbacks"))
+force_use_adaptive_step = bool(_cfg("nonlinear", "force_control", "use_adaptive_step"))
 force_fallback_strategies = [
-    {"algorithm": ("NewtonLineSearch",), "test": ("NormUnbalance", 1e-5, 150)},
-    {"algorithm": ("KrylovNewton", "-maxDim", 3), "test": ("NormUnbalance", 1e-5, 200)},
-    {"algorithm": ("NewtonLineSearch", "-type", "Bisection", "-maxIter", 50),
-     "test": ("NormUnbalance", 1e-5, 200)},
-    {"algorithm": ("SecantNewton", "-maxDim", 3), "test": ("NormUnbalance", 1e-5, 200)},
-    {"algorithm": ("Newton", "-initialThenCurrent"), "test": ("NormUnbalance", 1e-5, 200)},
+    {
+        "algorithm": tuple(item["algorithm"]),
+        "test": tuple(item["test"]),
+    }
+    for item in _cfg("nonlinear", "force_control", "fallback_strategies")
 ]
+_force_solver_cfg = _cfg("nonlinear", "force_control", "solver_options")
 force_solver_options = dict(
     adaptive_force_step=force_use_adaptive_step,
-    force_min_increment=1e-6,
-    force_cutback_factor=0.5,
-    force_easy_iterations=8,
-    force_slow_iterations=16,
-    fallback_growth_steps=10,
-    fallback_growth_factor=1.25,
-    force_max_attempts=90,
+    force_min_increment=_force_solver_cfg["force_min_increment"],
+    force_cutback_factor=_force_solver_cfg["force_cutback_factor"],
+    force_easy_iterations=_force_solver_cfg["force_easy_iterations"],
+    force_slow_iterations=_force_solver_cfg["force_slow_iterations"],
+    fallback_growth_steps=_force_solver_cfg["fallback_growth_steps"],
+    fallback_growth_factor=_force_solver_cfg["fallback_growth_factor"],
+    force_max_attempts=_force_solver_cfg["force_max_attempts"],
 )
-force_solver_max_steps = 1000                                             # original fixed-step analysis limit
-force_adaptive_max_steps = 10000                                          # optional budget for adaptive small increments
-uz_limit = 1                                                              # Maximum Uz displacement for nonlinear analysis
-local_inst_control = True                                                 # Local instability Postprocessing
-plot_fiber_sections = False                                               # save yz-patch plots of nonlinear fiber sections
-plot_fiber_sections_show = False                                          # show fiber section plots interactively
-fiber_section_plot_dir = _build_output_path(output_dir, "fiber_plots")    # plot directory for fiber
-fiber_n_circ = 8                                                          # circumferential fibers for CHS
-fiber_n_rad = 1                                                           # radial fibers for CHS
-fiber_L = [1, 8, 8, 1, 0.0]                                               # [web_y, web_z, flange_y, flange_z, rotation_deg]
-fiber_2L = [1, 8, 8, 1, 0]                                                # [web_y, web_z, flange_y, flange_z, rotation_deg]
-fiber_4L = [1, 8, 8, 1, -90]                                              # [web_y, web_z, flange_y, flange_z, rotation_deg]
+force_solver_max_steps = _cfg("nonlinear", "force_control", "fixed_step_max_steps")
+force_adaptive_max_steps = _cfg("nonlinear", "force_control", "adaptive_max_steps")
+uz_limit = _cfg("nonlinear", "uz_limit")
+local_inst_control = bool(_cfg("nonlinear", "local_instability_postprocessing"))
+plot_fiber_sections = bool(_cfg("fibers", "plot_sections"))
+plot_fiber_sections_show = bool(_cfg("fibers", "show_section_plots"))
+fiber_section_plot_dir = _build_output_path(output_dir, "fiber_plots")
+fiber_n_circ = _cfg("fibers", "n_circ")
+fiber_n_rad = _cfg("fibers", "n_rad")
+fiber_L = list(_cfg("fibers", "L"))
+fiber_2L = list(_cfg("fibers", "2L"))
+fiber_4L = list(_cfg("fibers", "4L"))
+
 #---------------------------------------------------------------------------------------------------------------------------------------------
 #==============================================================PLOT CONTROL PARAM=============================================================
 #---------------------------------------------------------------------------------------------------------------------------------------------
-plot_geo = False                                                         # Toggle plotting geometry
-pl_mesh = False                                                          # Toggle plotting mesh
-plot_opvis = False                                                        # Toggle plotting structural model
-plot_def = False                                                          # Toggle plotting deformed shape (VL)
-plot_buck = False                                                         # Toggle plotting buckling shape (LEBA)
-plot_buck_n_curve_points = 10                                             # Graphical interpolation for buckling plots
-plot_sec_plan = False                                                     # Show assigned-section plan plot
-live_plot = False                                                         # Toggle plotting live plot (GMNA)
-save_load_map = True                                                      # Save applied nodal load map
-show_load_map = False                                                     # Show applied nodal load map interactively
-writer_os = True                                                         # Toggle writer OS code
-diagram_force = False                                                     # Toggle force diagram   
+plot_geo = bool(_cfg("plotting", "geometry"))
+pl_mesh = bool(_cfg("plotting", "mesh"))
+plot_opvis = bool(_cfg("plotting", "opensees_model"))
+plot_def = bool(_cfg("plotting", "deformed_shape"))
+plot_buck = bool(_cfg("plotting", "buckling_shape"))
+plot_buck_n_curve_points = _cfg("plotting", "buckling_curve_points")
+plot_sec_plan = bool(_cfg("plotting", "section_plan"))
+live_plot = bool(_cfg("plotting", "nonlinear_live_plot"))
+save_load_map = bool(_cfg("plotting", "save_load_map"))
+show_load_map = bool(_cfg("plotting", "show_load_map"))
+writer_os = bool(_cfg("plotting", "write_opensees_code"))
+diagram_force = bool(_cfg("plotting", "force_diagram"))
+
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
 # =================================================================MAINCODE===================================================================
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%                       
