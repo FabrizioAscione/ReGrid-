@@ -11,12 +11,13 @@ Optimization: Use genetic algorithms to explore geometry and section-design alte
 Reuse and corrosion: Optionally match structural members to reclaimed steel stock, account for cutting and leftover material, and model corrosion-related section loss.
 Results and exports: Produce plots, reports and CSV summaries, export geometry to DXF, and save optimization results for later review.
 Workflow
-<img width="944" height="677" alt="image" src="https://github.com/user-attachments/assets/128ee709-e52b-4a18-bd08-96c02acd4639" />
+<img width="400" height="300" alt="image" src="https://github.com/user-attachments/assets/128ee709-e52b-4a18-bd08-96c02acd4639" />
 
 
 
 The analysis workflow starts with user-defined geometry and mesh parameters. The generated structure is then assigned material and section properties, boundary conditions and loads. Depending on the chosen settings, the project runs structural analyses and design checks, or evaluates candidate designs through optimization. Optional reuse and corrosion workflows can be included in this process.
-<img width="709" height="475" alt="image" src="https://github.com/user-attachments/assets/10bca691-2b2f-45bd-92f0-402c2998e8a9" />
+<img width="739" height="505" alt="image" src="https://github.com/user-attachments/assets/5f85896d-4669-420b-960c-e93e90e8016a" />
+
 
 The code is organized into modules for geometry, meshing, analysis, optimization, visualization and data export. Configuration options and batch tools support running different cases without manually rebuilding each model.
 
