@@ -16,6 +16,7 @@ Workflow
 
 
 The analysis workflow starts with user-defined geometry and mesh parameters. The generated structure is then assigned material and section properties, boundary conditions and loads. Depending on the chosen settings, the project runs structural analyses and design checks, or evaluates candidate designs through optimization. Optional reuse and corrosion workflows can be included in this process.
+<img width="709" height="475" alt="image" src="https://github.com/user-attachments/assets/10bca691-2b2f-45bd-92f0-402c2998e8a9" />
 
 The code is organized into modules for geometry, meshing, analysis, optimization, visualization and data export. Configuration options and batch tools support running different cases without manually rebuilding each model.
 
