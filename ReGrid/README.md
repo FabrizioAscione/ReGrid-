@@ -90,11 +90,11 @@ The current release intentionally retains the original research-code organisatio
 
 Additional notes on the mechanical optimisation workflow are provided in [`OPT_MECH_2_EXPLANATION.txt`](OPT_MECH_2_EXPLANATION.txt).
 
-##Special Features
+## Special Features
 
 ReGrid includes two graphical interfaces designed to simplify both the definition of the analysis workflow and the post-processing of optimisation results.
 
-###ReGrid Graphical User Interface
+### ReGrid Graphical User Interface
 
 A dedicated Streamlit-based graphical user interface is provided through app.py. The interface allows users to configure and run ReGrid without directly modifying the source code or the config.yaml file.
 
@@ -114,7 +114,7 @@ python -m streamlit run app.py
 
 or, on Windows, through the provided run_gui.bat file.
 
-###Interactive Pareto-Front Selection
+### Interactive Pareto-Front Selection
 
 For multi-objective optimisation problems, ReGrid also includes a dedicated Pareto-front graphical interface for the interactive exploration of non-dominated solutions.
 
