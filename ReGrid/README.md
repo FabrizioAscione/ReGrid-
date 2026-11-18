@@ -90,8 +90,15 @@ The current release intentionally retains the original research-code organisatio
 
 Additional notes on the mechanical optimisation workflow are provided in [`OPT_MECH_2_EXPLANATION.txt`](OPT_MECH_2_EXPLANATION.txt).
 
-## Requirements
+## Python version
 
+ReGrid is currently developed and tested with **Python 3.10**.
+Python 3.10 is recommended because the OpenSeesPy version used by ReGrid
+(`openseespy==3.5.1.3`) is compatible with Python 3.10.
+Using Python 3.11 or 3.12 may require a different OpenSeesPy version and has
+not been validated for this release.
+
+## Requirements
 The current environment was developed and tested with **Python 3.10** on Windows. The exact package versions used in the development environment are listed in [`requirements.txt`](requirements.txt).
 
 Main dependencies include:
