@@ -77,7 +77,7 @@ The current release intentionally retains the original research-code organisatio
 
 | Component | Main files |
 | --- | --- |
-| Main workflow and runtime configuration | `unitled.py`, `unitled_helpers.py` |
+| Main workflow and runtime configuration | `main.py`, `main_helpers.py` |
 | Geometry and mesh generation | `geometry.py`, `mesh.py` |
 | Materials and steel-section data | `materials.py`, `import_section.py`, `sections_1.csv` |
 | OpenSees model and analyses | `OS_*.py` |
@@ -157,5 +157,5 @@ ReGrid is research software developed for scientific investigation of structural
 
 ## Authors
 
-**Fabrizio Ascione**, **Francesco Esposito**, **Diana Faiella**, and **Elena Mele**  
+**Fabrizio Ascione** 
 Department of Structures for Engineering and Architecture, University of Naples Federico II, Naples, Italy.
