@@ -1,0 +1,308 @@
+{
+  "output_root": "outputs/night_ga_batch",
+  "defaults": {
+    "genetic_reference_mode": "fixed_base",
+    "genetic_sampling": "lhs",
+    "genetic_population": 320,
+    "genetic_generations": 10,
+    "genetic_seed": 42,
+    "genetic_n_workers": 24,
+    "genetic_crossover_prob": 0.9,
+    "genetic_crossover_eta": 25.0,
+    "genetic_mutation_prob": 0.1,
+    "genetic_mutation_eta": 35.0,
+    "genetic_control_opt_dcr_limit": false,
+    "genetic_control_opt_dcr_limit_range": [
+      0.55,
+      0.95
+    ],
+    "genetic_opt_start_section_row": 50,
+    "genetic_opt_max_iter": 50,
+    "genetic_opt_dcr_limit": 0.8,
+    "genetic_opt_check_disp": true,
+    "genetic_opt_dlim": 0.15,
+    "genetic_opt_check_buckling": true,
+    "genetic_opt_buckling_lambda_min": 1.0,
+    "genetic_opt_check_merchant_rankine": true,
+    "genetic_opt_merchant_rankine_min": 1.0,
+    "genetic_control_ga_dcr_limit": false,
+    "genetic_control_ga_disp_limit": false,
+    "genetic_control_ga_buckling_limit": false,
+    "genetic_control_ga_mr_limit": false,
+    "genetic_control_reuse_max_cut_length": false,
+    "genetic_control_opt_dlim": false,
+    "genetic_control_opt_buckling_limit": false,
+    "genetic_control_opt_mr_limit": false,
+    "genetic_select_pareto_for_nl": false,
+    "genetic_move_range_x": [
+      -0.5,
+      0.5
+    ],
+    "genetic_move_range_y": [
+      -0.5,
+      0.5
+    ]
+  },
+  "runs": [
+    {
+      "label": "2d_mass_reuse_members_full_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "mass",
+      "genetic_obj_2": "reuse_ratio_members",
+      "genetic_obj_3": null,
+      "genetic_seed": 101
+    },
+    {
+      "label": "2d_mass_reuse_members_light_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "mass",
+      "genetic_obj_2": "reuse_ratio_members",
+      "genetic_obj_3": null,
+      "genetic_seed": 102,
+      "genetic_opt_check_disp": false,
+      "genetic_opt_check_buckling": false,
+      "genetic_opt_check_merchant_rankine": false
+    },
+    {
+      "label": "2d_mass_reuse_members_full_r100",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "mass",
+      "genetic_obj_2": "reuse_ratio_members",
+      "genetic_obj_3": null,
+      "genetic_seed": 103,
+      "genetic_move_range_x": [
+        -1.0,
+        1.0
+      ],
+      "genetic_move_range_y": [
+        -1.0,
+        1.0
+      ]
+    },
+    {
+      "label": "2d_mass_reuse_members_optdcr090_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "mass",
+      "genetic_obj_2": "reuse_ratio_members",
+      "genetic_obj_3": null,
+      "genetic_seed": 104,
+      "genetic_opt_dcr_limit": 0.9
+    },
+    {
+      "label": "2d_mass_reuse_members_ctrl_dcr_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "mass",
+      "genetic_obj_2": "reuse_ratio_members",
+      "genetic_obj_3": null,
+      "genetic_seed": 105,
+      "genetic_control_opt_dcr_limit": true
+    },
+    {
+      "label": "2d_pi_ec_pi_mr_fixed_gafull_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "pi_ec",
+      "genetic_obj_2": "pi_mr",
+      "genetic_obj_3": null,
+      "genetic_seed": 108,
+      "genetic_reference_mode": "fixed_base"
+    },
+    {
+      "label": "2d_pi_ec_pi_mr_fixed_galight_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "pi_ec",
+      "genetic_obj_2": "pi_mr",
+      "genetic_obj_3": null,
+      "genetic_seed": 301,
+      "genetic_reference_mode": "fixed_base",
+      "genetic_opt_check_disp": false,
+      "genetic_opt_check_buckling": false,
+      "genetic_opt_check_merchant_rankine": false
+    },
+    {
+      "label": "2d_pi_ec_pi_mr_base_gafull_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "pi_ec",
+      "genetic_obj_2": "pi_mr",
+      "genetic_obj_3": null,
+      "genetic_seed": 109,
+      "genetic_reference_mode": "candidate_new"
+    },
+    {
+      "label": "2d_pi_ec_pi_mr_base_galight_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "pi_ec",
+      "genetic_obj_2": "pi_mr",
+      "genetic_obj_3": null,
+      "genetic_seed": 302,
+      "genetic_reference_mode": "candidate_new",
+      "genetic_opt_check_disp": false,
+      "genetic_opt_check_buckling": false,
+      "genetic_opt_check_merchant_rankine": false
+    },
+    {
+      "label": "2d_pi_mass_reuse_members_fixed_full_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "pi_mass",
+      "genetic_obj_2": "reuse_ratio_members",
+      "genetic_obj_3": null,
+      "genetic_seed": 110,
+      "genetic_reference_mode": "fixed_base"
+    },
+    {
+      "label": "2d_pi_mass_reuse_members_base_full_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "pi_mass",
+      "genetic_obj_2": "reuse_ratio_members",
+      "genetic_obj_3": null,
+      "genetic_seed": 111,
+      "genetic_reference_mode": "candidate_new"
+    },
+    {
+      "label": "3d_mass_reuse_cost_full_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "mass",
+      "genetic_obj_2": "reuse_ratio_members",
+      "genetic_obj_3": "cost",
+      "genetic_seed": 201
+    },
+    {
+      "label": "3d_mass_reuse_cost_light_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "mass",
+      "genetic_obj_2": "reuse_ratio_members",
+      "genetic_obj_3": "cost",
+      "genetic_seed": 202,
+      "genetic_opt_check_disp": false,
+      "genetic_opt_check_buckling": false,
+      "genetic_opt_check_merchant_rankine": false
+    },
+    {
+      "label": "3d_mass_reuse_lscrap_full_r100",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "mass",
+      "genetic_obj_2": "reuse_ratio_members",
+      "genetic_obj_3": "lscrap",
+      "genetic_seed": 203,
+      "genetic_move_range_x": [
+        -1.0,
+        1.0
+      ],
+      "genetic_move_range_y": [
+        -1.0,
+        1.0
+      ]
+    },
+    {
+      "label": "3d_mass_reuse_ncuts_full_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "mass",
+      "genetic_obj_2": "reuse_ratio_members",
+      "genetic_obj_3": "n_cuts",
+      "genetic_seed": 205
+    },
+    {
+      "label": "3d_mass_reuse_ncuts_full_r100",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "mass",
+      "genetic_obj_2": "reuse_ratio_members",
+      "genetic_obj_3": "n_cuts",
+      "genetic_seed": 206,
+      "genetic_move_range_x": [
+        -1.0,
+        1.0
+      ],
+      "genetic_move_range_y": [
+        -1.0,
+        1.0
+      ]
+    },
+    {
+      "label": "3d_pi_ec_pi_mr_pi_cost_fixed_full_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "pi_ec",
+      "genetic_obj_2": "pi_mr",
+      "genetic_obj_3": "pi_cost",
+      "genetic_seed": 207,
+      "genetic_reference_mode": "fixed_base"
+    },
+    {
+      "label": "3d_pi_ec_pi_mr_pi_cost_base_full_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "pi_ec",
+      "genetic_obj_2": "pi_mr",
+      "genetic_obj_3": "pi_cost",
+      "genetic_seed": 208,
+      "genetic_reference_mode": "candidate_new"
+    },
+    {
+      "label": "3d_pi_mass_pi_ec_pi_cost_fixed_gafull_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "pi_mass",
+      "genetic_obj_2": "pi_ec",
+      "genetic_obj_3": "pi_cost",
+      "genetic_seed": 209,
+      "genetic_reference_mode": "fixed_base"
+    },
+    {
+      "label": "3d_pi_mass_pi_ec_pi_cost_fixed_galight_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "pi_mass",
+      "genetic_obj_2": "pi_ec",
+      "genetic_obj_3": "pi_cost",
+      "genetic_seed": 303,
+      "genetic_reference_mode": "fixed_base",
+      "genetic_opt_check_disp": false,
+      "genetic_opt_check_buckling": false,
+      "genetic_opt_check_merchant_rankine": false
+    },
+    {
+      "label": "3d_pi_mass_pi_ec_pi_cost_base_gafull_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "pi_mass",
+      "genetic_obj_2": "pi_ec",
+      "genetic_obj_3": "pi_cost",
+      "genetic_seed": 210,
+      "genetic_reference_mode": "candidate_new"
+    },
+    {
+      "label": "3d_pi_mass_pi_ec_pi_cost_base_galight_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "pi_mass",
+      "genetic_obj_2": "pi_ec",
+      "genetic_obj_3": "pi_cost",
+      "genetic_seed": 304,
+      "genetic_reference_mode": "candidate_new",
+      "genetic_opt_check_disp": false,
+      "genetic_opt_check_buckling": false,
+      "genetic_opt_check_merchant_rankine": false
+    },
+    {
+      "label": "3d_mass_reuse_cost_optdcr090_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "mass",
+      "genetic_obj_2": "reuse_ratio_members",
+      "genetic_obj_3": "cost",
+      "genetic_seed": 211,
+      "genetic_opt_dcr_limit": 0.9
+    },
+    {
+      "label": "3d_mass_reuse_cost_ctrl_dcr_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "mass",
+      "genetic_obj_2": "reuse_ratio_members",
+      "genetic_obj_3": "cost",
+      "genetic_seed": 212,
+      "genetic_control_opt_dcr_limit": true
+    },
+    {
+      "label": "3d_mass_reuse_cost_fastopt_r050",
+      "genetic_objective_mode": "multi",
+      "genetic_obj_1": "mass",
+      "genetic_obj_2": "reuse_ratio_members",
+      "genetic_obj_3": "cost",
+      "genetic_seed": 213,
+      "genetic_opt_max_iter": 30,
+      "genetic_opt_start_section_row": 45
+    }
+  ]
+}
