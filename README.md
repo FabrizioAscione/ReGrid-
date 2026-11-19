@@ -24,7 +24,7 @@ The analysis workflow starts with user-defined geometry and mesh parameters. The
 The code is organized into modules for geometry, meshing, analysis, optimization, visualization and data export. Configuration options and batch tools support running different cases without manually rebuilding each model.
 
 The project is intended as a configurable research environment: available analyses and optional workflows depend on the selected settings and input data.
-<img width="960" height="294" alt="image" src="https://github.com/user-attachments/assets/03dc80d0-5ff3-4840-b687-c4a0562cb033" />
+
 
 
 If you use this code in your research, please cite the following papers
