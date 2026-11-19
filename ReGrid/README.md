@@ -199,5 +199,5 @@ ReGrid is research software developed for scientific investigation of structural
 
 ## Authors
 
-**Fabrizio Ascione**, **Francesco Esposito**, **Diana Faiella**, and **Elena Mele**  
+**Fabrizio Ascione**
 Department of Structures for Engineering and Architecture, University of Naples Federico II, Naples, Italy.
