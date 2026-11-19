@@ -3,6 +3,7 @@ ReGrid is a Python toolkit for the parametric modelling, structural analysis and
 
 
 <img width="800" height="400" alt="Screenshot 2026-11-18 195154" src="https://github.com/user-attachments/assets/b9807cc1-483b-41dc-96d9-257850b67047" />
+<img width="737" height="589" alt="image" src="https://github.com/user-attachments/assets/4be25f22-c8cc-4060-bf78-73ec2c3932ed" />
 
 Features
 Parametric geometry: Generate barrel vaults, parabolic domes, hypar surfaces and Kiewitt-8 domes by specifying dimensions, rise and mesh subdivisions.
